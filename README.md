@@ -32,11 +32,11 @@ CodexのNotion連携とInternal integrationは別の認証です。GitHub Action
 ## Cloudflare Workerの準備
 
 1. Cloudflare DashboardのWorkers & PagesでWorkerを作成します。
-2. Worker名を`wrangler.jsonc`の`name`と一致させます（初期値は`travel-itinerary-system`です）。
+2. Worker名を`wrangler.jsonc`の`name`と一致させます（現在は`travel-itinerary`です）。
 3. Workerを編集できるAPI Tokenを作成し、GitHub Secret `CLOUDFLARE_API_TOKEN`へ登録します。
 4. Account IDをGitHub Secret `CLOUDFLARE_ACCOUNT_ID`へ登録します。
 
-GitHub Actionsは`dist`をWorkerの静的アセットとしてデプロイします。現在の設定では`travel-itinerary-system.baribaritozan.workers.dev`が更新先です。
+GitHub Actionsは`dist`をWorkerの静的アセットとしてデプロイします。現在の設定では`travel-itinerary.baribaritozan.workers.dev`が更新先です。
 
 ## GitHubの設定
 
