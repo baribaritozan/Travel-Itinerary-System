@@ -75,7 +75,7 @@ Notionの有料プランでは、ボタンまたはDatabase Buttonへ`Send webho
 - Method：POST（Notion側で固定）
 - Custom Header：`X-Publish-Key` = Workerへ登録した`PUBLISH_KEY`
 
-Webhookの本文にSlugがなくても`sample-trip`を更新します。対象を変える場合は`wrangler.jsonc`の`DEFAULT_TRIP_SLUG`を変更します。Notion無料プランではWebhookアクションが使えないため、ボタンの`Open URL`で公開サイトを開き、サイト側の更新ボタンを使用します。
+Webhookの本文にSlugがなくても`sample-trip`を更新します。対象を変える場合は`wrangler.jsonc`の`DEFAULT_TRIP_SLUG`を変更します。Notion無料プランではWebhookアクションが使えないため、ボタンの`Open URL`へ`https://travel-itinerary.baribaritozan.workers.dev/?publish=1`を設定します。サイトが開くと更新キーの入力画面が自動表示されます。
 
 ## 公開データのルール
 

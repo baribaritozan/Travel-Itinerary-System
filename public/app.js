@@ -74,6 +74,13 @@
       }
     });
 
+    const currentUrl = new URL(window.location.href);
+    if (currentUrl.searchParams.get("publish") === "1") {
+      currentUrl.searchParams.delete("publish");
+      window.history.replaceState(null, "", currentUrl);
+      setTimeout(() => publishButton.click(), 0);
+    }
+
     if (window.L) {
       leafletMap = L.map("map", { zoomControl: true }).setView([35.6812, 139.7671], 11);
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
