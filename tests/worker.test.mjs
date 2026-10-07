@@ -1,44 +1,92 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handlePublishRequest, secretsMatch } from "../src/worker.mjs";
+import {
+  handleItineraryRequest,
+  handleNotionWebhook,
+  handleRefreshRequest,
+  ItineraryState,
+  verifyNotionSignature,
+} from "../src/worker.mjs";
 
-const env = {
-  PUBLISH_KEY: "correct-secret",
-  GITHUB_ACTIONS_TOKEN: "github-token",
-  GITHUB_OWNER: "owner",
-  GITHUB_REPO: "repo",
-  GITHUB_WORKFLOW: "publish.yml",
-  GITHUB_REF: "main",
-  DEFAULT_TRIP_SLUG: "sample-trip",
+const payload = {
+  generatedAt: "2026-10-08T00:00:00.000Z",
+  trip: { name: "Kyoto", slug: "sample-trip" },
+  places: [],
+  items: [],
 };
 
-test("compares publish keys", async () => {
-  assert.equal(await secretsMatch("correct-secret", "correct-secret"), true);
-  assert.equal(await secretsMatch("wrong", "correct-secret"), false);
+function namespace(response = Response.json(payload)) {
+  return {
+    idFromName(name) {
+      assert.equal(name, "sample-trip");
+      return name;
+    },
+    get() {
+      return { fetch: async () => response.clone() };
+    },
+  };
+}
+
+test("serves the configured itinerary from its Durable Object", async () => {
+  const env = { DEFAULT_TRIP_SLUG: "sample-trip", ITINERARY_STATE: namespace() };
+  const response = await handleItineraryRequest(new Request("https://example.com/api/itinerary"), env);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).trip.name, "Kyoto");
 });
 
-test("rejects an invalid publish key", async () => {
-  const request = new Request("https://example.com/api/publish", {
+test("rejects cross-origin refreshes", async () => {
+  const env = { DEFAULT_TRIP_SLUG: "sample-trip", ITINERARY_STATE: namespace() };
+  const request = new Request("https://example.com/api/refresh", {
     method: "POST",
-    headers: { "X-Publish-Key": "wrong" },
+    headers: { Origin: "https://attacker.example" },
   });
-  const response = await handlePublishRequest(request, env, () => assert.fail("GitHub must not be called"));
-  assert.equal(response.status, 401);
+  const response = await handleRefreshRequest(request, env);
+  assert.equal(response.status, 403);
 });
 
-test("dispatches the fixed GitHub workflow", async () => {
-  const request = new Request("https://example.com/api/publish", {
+test("accepts same-origin refreshes without a browser secret", async () => {
+  const env = { DEFAULT_TRIP_SLUG: "sample-trip", ITINERARY_STATE: namespace() };
+  const request = new Request("https://example.com/api/refresh?slug=sample-trip", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Publish-Key": "correct-secret" },
-    body: JSON.stringify({ trip_slug: "sample-trip" }),
+    headers: { Origin: "https://example.com" },
   });
-  let dispatched;
-  const response = await handlePublishRequest(request, env, async (url, options) => {
-    dispatched = { url, options, body: JSON.parse(options.body) };
-    return new Response(null, { status: 204 });
+  const response = await handleRefreshRequest(request, env);
+  assert.equal(response.status, 200);
+});
+
+test("validates Notion webhook HMAC signatures", async () => {
+  const body = JSON.stringify({ type: "page.created" });
+  const secret = "verification-secret";
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const digest = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body)));
+  const signature = `sha256=${[...digest].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+  assert.equal(await verifyNotionSignature(body, signature, secret), true);
+  assert.equal(await verifyNotionSignature(body, signature, "wrong"), false);
+});
+
+test("acknowledges the Notion webhook verification request", async () => {
+  const request = new Request("https://example.com/api/notion-webhook", {
+    method: "POST",
+    body: JSON.stringify({ verification_token: "token-from-notion" }),
   });
-  assert.equal(response.status, 202);
-  assert.equal(dispatched.url, "https://api.github.com/repos/owner/repo/actions/workflows/publish.yml/dispatches");
-  assert.equal(dispatched.options.headers.Authorization, "Bearer github-token");
-  assert.deepEqual(dispatched.body, { ref: "main", inputs: { trip_slug: "sample-trip" } });
+  const response = await handleNotionWebhook(request, {});
+  assert.equal(response.status, 200);
+});
+
+test("returns a cached Durable Object payload during cooldown", async () => {
+  const storage = {
+    async get(key) {
+      return key === "payload" ? payload : Date.now();
+    },
+  };
+  const state = new ItineraryState({ storage }, {});
+  const response = await state.fetch(new Request("https://internal/data?slug=sample-trip&refresh=1"));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("X-Itinerary-Cache"), "throttled");
 });

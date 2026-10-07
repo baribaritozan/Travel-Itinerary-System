@@ -117,30 +117,71 @@ export function buildTripPayload({ tripPage, placePages, itemPages, generatedAt 
   };
 }
 
-export async function queryDataSource({ token, dataSourceId, filter }) {
+function notionHeaders(token) {
+  return {
+    Authorization: `Bearer ${token}`,
+    "Notion-Version": NOTION_VERSION,
+    "Content-Type": "application/json",
+  };
+}
+
+async function notionResponse(response) {
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Notion API ${response.status}: ${body}`);
+  }
+  return response.json();
+}
+
+export async function queryDataSource({ token, dataSourceId, filter, fetchImpl = fetch }) {
   const results = [];
   let startCursor;
   do {
-    const response = await fetch(`${NOTION_API_BASE}/data_sources/${dataSourceId}/query`, {
+    const response = await fetchImpl(`${NOTION_API_BASE}/data_sources/${dataSourceId}/query`, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Notion-Version": NOTION_VERSION,
-        "Content-Type": "application/json",
-      },
+      headers: notionHeaders(token),
       body: JSON.stringify({
         page_size: 100,
         ...(filter ? { filter } : {}),
         ...(startCursor ? { start_cursor: startCursor } : {}),
       }),
     });
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`Notion API ${response.status}: ${body}`);
-    }
-    const page = await response.json();
+    const page = await notionResponse(response);
     results.push(...page.results);
     startCursor = page.has_more ? page.next_cursor : undefined;
   } while (startCursor);
   return results;
+}
+
+export async function retrievePage({ token, pageId, fetchImpl = fetch }) {
+  return notionResponse(await fetchImpl(`${NOTION_API_BASE}/pages/${pageId}`, {
+    headers: notionHeaders(token),
+  }));
+}
+
+export async function updatePage({ token, pageId, properties, fetchImpl = fetch }) {
+  return notionResponse(await fetchImpl(`${NOTION_API_BASE}/pages/${pageId}`, {
+    method: "PATCH",
+    headers: notionHeaders(token),
+    body: JSON.stringify({ properties }),
+  }));
+}
+
+export async function syncTripFromNotion({
+  token,
+  tripSlug,
+  tripsDataSourceId,
+  placesDataSourceId,
+  itemsDataSourceId,
+  fetchImpl = fetch,
+}) {
+  const publishFilter = { property: "Publish", checkbox: { equals: true } };
+  const [tripPages, placePages, itemPages] = await Promise.all([
+    queryDataSource({ token, dataSourceId: tripsDataSourceId, filter: publishFilter, fetchImpl }),
+    queryDataSource({ token, dataSourceId: placesDataSourceId, filter: publishFilter, fetchImpl }),
+    queryDataSource({ token, dataSourceId: itemsDataSourceId, filter: publishFilter, fetchImpl }),
+  ]);
+  const tripPage = tripPages.find((page) => plainText(page.properties.Slug) === tripSlug);
+  if (!tripPage) throw new Error(`Published trip with Slug "${tripSlug}" was not found.`);
+  return buildTripPayload({ tripPage, placePages, itemPages });
 }

@@ -1,17 +1,27 @@
 {
   "name": "travel-itinerary",
   "main": "./src/worker.mjs",
-  "compatibility_date": "2026-10-08",
+  "compatibility_date": "2026-10-07",
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application"
   },
   "vars": {
-    "GITHUB_OWNER": "baribaritozan",
-    "GITHUB_REPO": "Travel-Itinerary-System",
-    "GITHUB_WORKFLOW": "publish.yml",
-    "GITHUB_REF": "main",
     "DEFAULT_TRIP_SLUG": "sample-trip"
-  }
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ITINERARY_STATE",
+        "class_name": "ItineraryState"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["ItineraryState"]
+    }
+  ]
 }

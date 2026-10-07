@@ -5,9 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "build:local": "node --env-file=.env scripts/build.mjs",
-    "build:sample": "node scripts/build.mjs --sample",
-    "preview": "node scripts/serve.mjs",
+    "dev": "npm run build && npx wrangler dev",
     "test": "node --test"
   },
   "engines": {
