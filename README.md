@@ -12,14 +12,14 @@ NotionページURLとデータソースIDは公開リポジトリへコミット
 
 ## ローカル確認
 
-Node.js 20以上で実行します。外部パッケージのインストールは不要です。
+Node.js 24以上で実行します。外部パッケージのインストールは不要です。
 
 ```powershell
 npm run build:sample
 npm run preview
 ```
 
-実データで生成する場合は`.env.example`の値を環境変数として設定し、`npm run build`を実行します。`NOTION_TOKEN`をブラウザや生成物へ入れないでください。
+実データで生成する場合は`.env.example`を参考にローカルの`.env`を作り、`npm run build:local`を実行します。`.env`はGitの対象外です。`NOTION_TOKEN`をブラウザや生成物へ入れないでください。
 
 ## Notion APIの準備
 
@@ -53,6 +53,29 @@ Repository Variables:
 - `NOTION_ITEMS_DATA_SOURCE_ID`
 
 Actionsの`Publish itinerary`を手動実行し、`trip_slug`へTrips DBのSlugを入力します。
+
+## サイトまたはNotionから更新する
+
+Workerの`POST /api/publish`がGitHubの`Publish itinerary`を起動します。APIは`X-Publish-Key`ヘッダーで保護し、GitHub Tokenと更新キーはCloudflare WorkerのSecretに保存します。公開HTMLにはどちらも埋め込みません。
+
+### Worker Secrets
+
+Cloudflare Dashboardで`travel-itinerary` → Settings → Variables and Secretsを開き、次をSecretとして追加します。
+
+- `GITHUB_ACTIONS_TOKEN`：対象リポジトリだけに限定したFine-grained personal access token。Repository permissionの`Actions: Read and write`を付けます。
+- `PUBLISH_KEY`：パスワードマネージャー等で生成した十分に長いランダム文字列。
+
+サイトの`Notionから再取得`を押すと`PUBLISH_KEY`の入力を求め、更新完了まで`data.json`を確認して自動再読み込みします。キーはブラウザへ保存しません。
+
+### Notionボタン
+
+Notionの有料プランでは、ボタンまたはDatabase Buttonへ`Send webhook`アクションを追加します。
+
+- URL：`https://travel-itinerary.baribaritozan.workers.dev/api/publish`
+- Method：POST（Notion側で固定）
+- Custom Header：`X-Publish-Key` = Workerへ登録した`PUBLISH_KEY`
+
+Webhookの本文にSlugがなくても`sample-trip`を更新します。対象を変える場合は`wrangler.jsonc`の`DEFAULT_TRIP_SLUG`を変更します。Notion無料プランではWebhookアクションが使えないため、ボタンの`Open URL`で公開サイトを開き、サイト側の更新ボタンを使用します。
 
 ## 公開データのルール
 

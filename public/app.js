@@ -22,7 +22,11 @@
           <div class="eyebrow">Travel itinerary</div>
           <h1>${escapeHtml(data.trip.name)}</h1>
           <p class="meta">${formatTripPeriod(data.trip)}</p>
-          <p class="sync">最終同期 ${formatDateTime(data.generatedAt, data.trip.timezone)}</p>
+          <div class="sync-row">
+            <p class="sync">最終同期 ${formatDateTime(data.generatedAt, data.trip.timezone)}</p>
+            <button class="publish-button" type="button">Notionから再取得</button>
+          </div>
+          <p class="publish-status" role="status" aria-live="polite"></p>
         </header>
         <nav class="days" aria-label="日付"></nav>
         <div class="items"></div>
@@ -32,10 +36,43 @@
 
     const daysElement = app.querySelector(".days");
     const itemsElement = app.querySelector(".items");
+    const publishButton = app.querySelector(".publish-button");
+    const publishStatus = app.querySelector(".publish-status");
     let selectedDay = initialDay;
     let leafletMap;
     let layerGroup;
     let itemLayers = new Map();
+
+    publishButton.addEventListener("click", async () => {
+      const publishKey = window.prompt("管理者用の更新キーを入力してください。キーは保存されません。");
+      if (!publishKey) return;
+      publishButton.disabled = true;
+      publishStatus.className = "publish-status pending";
+      publishStatus.textContent = "更新を開始しています…";
+      try {
+        const response = await fetch("/api/publish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Publish-Key": publishKey },
+          body: JSON.stringify({ trip_slug: data.trip.slug }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || `更新API: ${response.status}`);
+        publishStatus.textContent = "更新を受け付けました。反映まで通常30秒ほどかかります…";
+        const updated = await waitForUpdate(data.generatedAt);
+        if (updated) {
+          publishStatus.textContent = "更新されました。再読み込みします…";
+          window.location.reload();
+          return;
+        }
+        publishStatus.className = "publish-status warning";
+        publishStatus.textContent = "処理は開始済みです。しばらくしてから再読み込みしてください。";
+      } catch (error) {
+        publishStatus.className = "publish-status error-text";
+        publishStatus.textContent = error.message;
+      } finally {
+        publishButton.disabled = false;
+      }
+    });
 
     if (window.L) {
       leafletMap = L.map("map", { zoomControl: true }).setView([35.6812, 139.7671], 11);
@@ -130,6 +167,22 @@
   function chooseInitialDay(days) {
     const today = new Date().toISOString().slice(0, 10);
     return days.find((day) => day >= today) ?? days.at(-1) ?? today;
+  }
+
+  async function waitForUpdate(previousGeneratedAt) {
+    const deadline = Date.now() + 90_000;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5_000));
+      try {
+        const response = await fetch(`./data.json?update=${Date.now()}`, { cache: "no-store" });
+        if (!response.ok) continue;
+        const latest = await response.json();
+        if (latest.generatedAt && latest.generatedAt !== previousGeneratedAt) return true;
+      } catch {
+        // The Worker can be briefly unavailable while a new deployment becomes active.
+      }
+    }
+    return false;
   }
 
   function hasCoordinates(place) {
