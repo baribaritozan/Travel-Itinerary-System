@@ -1,3 +1,5 @@
+import { compareItems, safeUrl } from "../public/model.mjs";
+
 const NOTION_API_BASE = "https://api.notion.com/v1";
 const NOTION_VERSION = "2026-03-11";
 
@@ -31,7 +33,8 @@ function numberValue(property) {
 }
 
 function urlValue(property) {
-  return property?.url ?? null;
+  const value = safeUrl(property?.url);
+  return value && !/(^|\.)notion\.(so|site)$/i.test(new URL(value).hostname) ? value : null;
 }
 
 function phoneValue(property) {
@@ -40,6 +43,44 @@ function phoneValue(property) {
 
 function requireValue(condition, message, errors) {
   if (!condition) errors.push(message);
+}
+
+export function normalizeDate(value, timeZone) {
+  if (!value) return null;
+  const calendar = /^\d{4}-\d{2}-\d{2}/.exec(value)?.[0];
+  if (!calendar || !Number.isFinite(Date.parse(calendar)) || new Date(calendar).toISOString().slice(0, 10) !== calendar) throw new Error("Invalid calendar date");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    if (new Date(value).toISOString().slice(0, 10) !== value) throw new Error("Invalid calendar date");
+    return value;
+  }
+  if (/T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value)) {
+    if (!Number.isFinite(Date.parse(value))) throw new Error("Invalid timestamp");
+    return new Date(value).toISOString();
+  }
+  // Notion may return a wall time alongside date.time_zone, without an offset.
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(value)) throw new Error("Invalid timestamp");
+  const target = Date.parse(`${value}Z`);
+  const formatter = new Intl.DateTimeFormat("sv-SE", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+  let instant = target;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const wall = formatter.format(new Date(instant)).replace(" ", "T");
+    const correction = target - (Date.parse(`${wall}Z`) + ((instant % 1000) + 1000) % 1000);
+    if (!correction) return new Date(instant).toISOString();
+    instant += correction;
+  }
+  throw new Error("Nonexistent local timestamp");
+}
+
+function validatedPeriod(period, timeZone, label, errors) {
+  try {
+    const start = normalizeDate(period.start, period.timeZone || timeZone);
+    const end = normalizeDate(period.end, period.timeZone || timeZone);
+    requireValue(!end || (start && Date.parse(end) >= Date.parse(start)), `${label}: end precedes start.`, errors);
+    return { start, end };
+  } catch {
+    errors.push(`${label}: invalid date or timezone.`);
+    return { start: null, end: null };
+  }
 }
 
 export function buildTripPayload({ tripPage, placePages, itemPages, generatedAt = new Date().toISOString() }) {
@@ -57,6 +98,11 @@ export function buildTripPayload({ tripPage, placePages, itemPages, generatedAt 
 
   requireValue(trip.name, "Trips.Trip is required.", errors);
   requireValue(trip.slug, "Trips.Slug is required.", errors);
+  requireValue(plainText(tripPage.properties.Timezone), "Trips.Timezone is required.", errors);
+  try { new Intl.DateTimeFormat("en", { timeZone: trip.timezone }); }
+  catch { errors.push("Trips.Timezone is invalid."); }
+  Object.assign(trip, validatedPeriod(tripPeriod, trip.timezone, "Trips.Period", errors));
+  requireValue(trip.start, "Trips.Period is required.", errors);
 
   const places = placePages.map((page) => ({
     id: normalizeId(page.id),
@@ -74,7 +120,7 @@ export function buildTripPayload({ tripPage, placePages, itemPages, generatedAt 
   const items = itemPages
     .filter((page) => relationIds(page.properties.Trip).includes(trip.id))
     .map((page) => {
-      const period = dateValue(page.properties.Period);
+      const period = validatedPeriod(dateValue(page.properties.Period), trip.timezone, `Itinerary item ${page.id}`, errors);
       const item = {
         id: normalizeId(page.id),
         title: plainText(page.properties.Item),
@@ -89,6 +135,11 @@ export function buildTripPayload({ tripPage, placePages, itemPages, generatedAt 
         toId: relationIds(page.properties.To)[0] ?? null,
         navigationUrl: urlValue(page.properties["Navigation URL"]),
         reservationUrl: urlValue(page.properties["Reservation URL"]),
+        reservationStatus: selectName(page.properties["Reservation Status"]),
+        durationMinutes: numberValue(page.properties["Duration Minutes"]),
+        totalCost: numberValue(page.properties["Total Cost"]),
+        perPersonCost: numberValue(page.properties["Per Person Cost"]),
+        currency: selectName(page.properties.Currency),
         notes: plainText(page.properties["Public Notes"]),
       };
 
@@ -102,7 +153,11 @@ export function buildTripPayload({ tripPage, placePages, itemPages, generatedAt 
       }
       return item;
     })
-    .sort((a, b) => (a.start ?? "").localeCompare(b.start ?? "") || a.order - b.order || a.title.localeCompare(b.title));
+    .sort(compareItems);
+
+  for (const place of places) {
+    requireValue((place.latitude === null && place.longitude === null) || (Number.isFinite(place.latitude) && Math.abs(place.latitude) <= 90 && Number.isFinite(place.longitude) && Math.abs(place.longitude) <= 180), `Place ${place.id}: invalid coordinates.`, errors);
+  }
 
   if (errors.length) {
     throw new Error(`Notion data validation failed:\n- ${errors.join("\n- ")}`);
@@ -183,5 +238,23 @@ export async function syncTripFromNotion({
   ]);
   const tripPage = tripPages.find((page) => plainText(page.properties.Slug) === tripSlug);
   if (!tripPage) throw new Error(`Published trip with Slug "${tripSlug}" was not found.`);
-  return buildTripPayload({ tripPage, placePages, itemPages });
+  return publicTripPayload(buildTripPayload({ tripPage, placePages, itemPages }));
+}
+
+export async function publicTripPayload(payload) {
+  if (!payload.trip.id) return payload;
+  const tripSlug = payload.trip.slug;
+  // Keep Notion relation IDs inside the sync boundary. UI IDs remain stable but
+  // cannot be used to construct internal Notion page URLs.
+  const publicId = async (id) => {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${tripSlug}:${id}`));
+    return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  };
+  const ids = new Map(await Promise.all([...payload.places, ...payload.items].map(async ({ id }) => [id, await publicId(id)])));
+  const { id: _internalId, ...trip } = payload.trip;
+  return {
+    ...payload, trip,
+    places: payload.places.map((place) => ({ ...place, id: ids.get(place.id), mapsUrl: urlValue({ url: place.mapsUrl }), website: urlValue({ url: place.website }) })),
+    items: payload.items.map((item) => ({ ...item, id: ids.get(item.id), placeId: ids.get(item.placeId) || null, fromId: ids.get(item.fromId) || null, toId: ids.get(item.toId) || null, navigationUrl: urlValue({ url: item.navigationUrl }), reservationUrl: urlValue({ url: item.reservationUrl }) })),
+  };
 }

@@ -1,6 +1,7 @@
 import {
   normalizeId,
   plainText,
+  publicTripPayload,
   relationIds,
   retrievePage,
   syncTripFromNotion,
@@ -196,7 +197,7 @@ export class ItineraryState {
     ]);
     const force = url.searchParams.get("refresh") === "1";
     if (payload && (!force || Date.now() - refreshedAt < REFRESH_COOLDOWN_MS)) {
-      return jsonResponse(payload, 200, { "X-Itinerary-Cache": force ? "throttled" : "hit" });
+      return jsonResponse(await publicTripPayload(payload), 200, { "X-Itinerary-Cache": force ? "throttled" : "hit" });
     }
 
     try {
@@ -204,7 +205,7 @@ export class ItineraryState {
       return jsonResponse(refreshed.payload, 200, { "X-Itinerary-Cache": "refreshed" });
     } catch (error) {
       console.error("Notion refresh failed", error);
-      if (payload) return jsonResponse(payload, 200, { "X-Itinerary-Cache": "stale" });
+      if (payload) return jsonResponse(await publicTripPayload(payload), 200, { "X-Itinerary-Cache": "stale" });
       return jsonResponse({ error: "Notionから旅程を取得できませんでした。" }, 502);
     }
   }

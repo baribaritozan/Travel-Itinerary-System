@@ -8,12 +8,12 @@
     <link rel="preconnect" href="https://tile.openstreetmap.org" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="./styles.css" />
-    <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script defer src="./app.js"></script>
+    <script type="module" src="./app.js"></script>
   </head>
   <body>
     <main id="app" aria-busy="true">
-      <section class="loading">旅程を読み込んでいます…</section>
+      <section class="loading" role="status">旅程を読み込んでいます…</section>
+      <noscript>この旅程にはJavaScriptが必要です。ブラウザでJavaScriptを有効にして再読み込みしてください。</noscript>
     </main>
   </body>
 </html>
