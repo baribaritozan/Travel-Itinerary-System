@@ -14,11 +14,11 @@ Git最初のpushはsandbox内DNSで失敗（Could not resolve host: github.com�
 | --- | --- | --- |
 | 2026-10-08 23:13頃 | Itinerary ItemsへStructure Select追加 | Item / Alternative Group / Series。既存optionを変更せず追加 |
 | 2026-10-08 23:13頃 | Itinerary ItemsへParent Relation追加 | 同一DBへの一方向自己Relation。既存Relation変更なし |
-| 2026-10-08 23:25頃 | [Phase2 Sample] 午前の比較 | 新規Alternative Group、Publish=false |
-| 2026-10-08 23:26頃 | [Phase2 Sample] 寺と移動の系列 | 新規Series、上記グループの子、Publish=false |
-| 2026-10-08 23:26頃 | [Phase2 Sample] 単独候補 | 新規Item、上記グループの子、2026-11-14 09:00–11:00 JST、Publish=false |
-| 2026-10-08 23:28頃 | [Phase2 Sample] 寺の子項目 | 新規Item、上記系列の子、2026-11-14 09:00–10:00 JST、Publish=false |
-| 2026-10-08 23:28頃 | [Phase2 Sample] 移動の子項目 | 新規Transit Item、上記系列の子、2026-11-14 10:00–11:00 JST、Publish=false |
+| 2026-10-08 23:26 | [Phase2 Sample] 午前の比較 | 新規Alternative Group、Publish=false |
+| 2026-10-08 23:27 | [Phase2 Sample] 寺と移動の系列 | 新規Series、上記グループの子、Publish=false |
+| 2026-10-08 23:27 | [Phase2 Sample] 単独候補 | 新規Item、上記グループの子、2026-11-14 09:00–11:00 JST、Publish=false |
+| 2026-10-08 23:28 | [Phase2 Sample] 寺の子項目 | 新規Item、上記系列の子、2026-11-14 09:00–10:00 JST、Publish=false |
+| 2026-10-08 23:28 | [Phase2 Sample] 移動の子項目 | 新規Transit Item、上記系列の子、2026-11-14 10:00–11:00 JST、Publish=false |
 
 変更前の公開行3件。既存行はread-only。既存プロパティの削除/rename/型変更/値clear/既存option削除なし。サンプルは上記5件のみ、新規サンプル同士だけを親子とし、既存公開Placeを読み取り参照する。新規Place/DB/Secret/Data Sourceなし。コンテナPeriodは公開子から将来日付を算出する。Notion REST schemaでParentがsingle_property（一方向）、対象が同一Data Source、StructureがSelectであることを再確認した。
 
@@ -120,5 +120,32 @@ PR: [Implement Phase 2 itinerary comparison and planning #1](https://github.com/
 API検証・ブラウザ検証はtry/finallyで実行し、エラー時もこのallowlistの新規サンプルだけを非公開へ戻す。秘密値/内部ID/ローカル証拠はGitへ追加しない。Notion追加Structure/Parentは残し、baseline codeが無視できる。重大な回帰なし、rollback不要。
 
 補足コマンド: sandbox内のnpm exec wrangler deployments status --helpはregistry.npmjs.orgのENOTFOUNDで失敗。OS設定を変えず、既に存在するnpmキャッシュのWrangler 4.148.0をNode実体で直接起動し、正式helpで--jsonを確認、許可された実行環境でstatus取得に成功。GitHub connectorでPR作成成功。
+
+### 検証コマンドの反復記録
+
+下記node/npmは上記v24.21.0実体/プロセス限定PATH指定。既存テストのskip・削除・期待値変更はない。
+
+| コマンド / 段階 | 結果 / 証拠 |
+| --- | --- |
+| 変更前 npm test / npm run test:browser / npm run build | 25/25、13/13、build成功、phase2-baseline-unit.txt / phase2-baseline-browser.txt |
+| 階層追加直後 node --test | 25/25（既存のみ） |
+| node --test tests/phase2-sync.test.mjs tests/phase2-model.test.mjs | 最初25/26（fixture名称の問題）、修正後26/26 |
+| UI追加直後 npm run test:browser | 13/13、phase2-browser-first.txt |
+| 7シナリオ追加後 npm run test:browser | 17/20、phase2-browser-second.txt |
+| node --test --test-name-pattern='Phase 2' scripts/browser-check.mjs | 5/7、phase2-browser-related.txt |
+| 修正後 npm run test:browser | 19/20（スライダーvalue制約）、phase2-browser-third.txt |
+| タッチ/期間/系列線追加後 npm test / npm run test:browser | 52/52、19/20（Chromeジェスチャー注入）、phase2-browser-fourth.txt |
+| node --test --test-name-pattern='Phase 2 mobile:' scripts/browser-check.mjs | dispatchTouchEventで1/1、phase2-touch-debug.txt |
+| 最終 npm test / npm run test:browser / npm run build / 全node --check / git diff --check | 52/52、20/20、build/12構文/diff成功 |
+| node artifacts/live-baseline.mjs | 本番baseline2条件、Notion方向/既存行hash成功 |
+| npm exec --yes -- wrangler deployments list | 変更前version確認成功 |
+| npm exec --yes -- wrangler deploy --dry-run / wrangler deploy | 検証済みcommitを既存Workerへ配置成功 |
+| node artifacts/live-phase2.mjs 0a82138fc58640c4106a24ab48b5edd94a2d532c | 本番3条件成功、全sample非公開復帰、API/画面から消滅、既存3行hash一致 |
+| Node実体＋既存wrangler/bin/wrangler.js deployments status --json | 最終deployment ID/version/100% traffic確認成功 |
+| node artifacts/sample-audit.mjs | Notion created_timeで作成時刻を上表へ確定、全5件Publish=falseを再確認 |
+| git diff --exit-code 0a82138fc58640c4106a24ab48b5edd94a2d532c HEAD -- public scripts src tests package.json package-lock.json wrangler.jsonc README.md docs/DEPLOYMENT.md docs/PHASE2_PLAN.md | 終了0、報告書追記以外はデプロイ時と同一 |
+| git status --short / git ls-remote origin branch/tag | clean、最終branch push/annotated baseline tag存在を確認 |
+
+schema追加時刻は操作記録の分単位の概算、サンプル作成はNotionが返したcreated_time（分精度）、Publish変更はAPI応答時刻（ミリ秒精度）。すべてJST。最終branchには実装commit後の報告書のみの追記が含まれ、本番とソースの差分はない。
 
 既知の制約: 実機iOS/Safariは追加互換検証の範囲。外部CDN/タイルの将来稼働は保証せず、失敗時の継続利用を検証した。Phase 3、採用候補のNotion保存、Web編集は対象外。Phase 2必須要件・検証・実環境操作の未達なし。
