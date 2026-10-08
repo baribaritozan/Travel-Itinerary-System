@@ -46,12 +46,12 @@ Notion境界はscripts/notion.mjs。同期は公開行のみ取得し、旅行�
 
 | 要件 / Phase 2基準 | 実装 | 自動テスト / ブラウザ証拠 |
 | --- | --- | --- |
-| FR-12、基準6〜8 | selectedIds、全公開Item子孫から三状態、prune、解除 | phase2-model、browser親子選択/日付/再取得 |
-| FR-13、基準3〜4 | Alternative Group、Status/Order候補順、activeCandidateByGroup、carousel | phase2-model、browser mobile/desktop・スワイプ/矢印/Enter/Space |
-| FR-14、基準5 | Series概要、詳細内の子タイムライン、独立展開/フォーカス | phase2-model、browser系列内操作 |
-| FR-15、基準9〜10 | 分類内OR/分類間AND、祖先保持、Cancelled、予約ショートカット、隠れた選択件数 | phase2-model、browser filters |
-| FR-16、基準11〜12 | 初期範囲、15分、半開区間、終日/終了なし、境界停止、地図限定 | phase2-model、browser time/map |
-| FR-17、基準1〜2 | Structure/Parentグラフ検証、期間包含、parentId公開変換 | phase2-sync: 全許可階層、循環/複数親/旅行不一致/非公開/孤立/禁止/空/期間/ID |
+| FR-13、基準6〜8 | selectedIds、全公開Item子孫から三状態、prune、解除 | phase2-model、browser親子選択/日付/再取得 |
+| FR-14、基準3〜4 | Alternative Group、Status/Order候補順、activeCandidateByGroup、carousel | phase2-model、browser mobile/desktop・スワイプ/矢印/Enter/Space |
+| FR-15、基準5 | Series概要、詳細内の子タイムライン、独立展開/フォーカス | phase2-model、browser系列内操作 |
+| FR-16、基準9〜10 | 分類内OR/分類間AND、祖先保持、Cancelled、予約ショートカット、隠れた選択件数 | phase2-model、browser filters |
+| FR-17、基準11〜12 | 初期範囲、15分、半開区間、終日/終了なし、境界停止、地図限定 | phase2-model、browser time/map |
+| FR-12、基準1〜2 | Structure/Parentグラフ検証、期間包含、parentId公開変換 | phase2-sync: 全許可階層、循環/複数親/旅行不一致/非公開/孤立/禁止/空/期間/ID |
 | 基準12 | フォーカス/選択地図強調、候補/系列の地図情報とfallback、地点集約 | phase2-model、browser pins/routes |
 | 基準13〜14 | native操作44px、mixed、live region、Safe Area、motion、横溢れ防止 | browser 390×844/1440×900/200%文字、実画像確認 |
 | 基準15、Phase 1 FR-01〜11/基準1〜10 | 既存状態/境界/テストを維持 | 既存25単体・統合/13ブラウザを変更・削除・skip・弱体化せず再実行 |

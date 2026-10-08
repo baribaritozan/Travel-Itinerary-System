@@ -171,6 +171,12 @@ export function buildTripPayload({ tripPage, placePages, itemPages, generatedAt 
     requireValue(parent.structure === "Alternative Group" && ["Item", "Series"].includes(item.structure) || parent.structure === "Series" && item.structure === "Item", `${item.title}: forbidden nesting or Item parent.`, errors);
   }
   const visiting = new Set(), visited = new Set();
+  function boundary(value, end = false) {
+    if (!value) return NaN;
+    if (value.includes("T")) return Date.parse(value);
+    const day = end ? new Date(Date.parse(value) + 86400000).toISOString().slice(0, 10) : value;
+    return Date.parse(normalizeDate(`${day}T00:00:00`, trip.timezone));
+  }
   function validateContainer(item) {
     if (visiting.has(item.id)) { errors.push(`${item.title}: cycle in Parent relations.`); return; }
     if (visited.has(item.id)) return;
@@ -180,10 +186,10 @@ export function buildTripPayload({ tripPage, placePages, itemPages, generatedAt 
     visiting.delete(item.id); visited.add(item.id);
     if (item.structure === "Item") return;
     requireValue(direct.length >= (item.structure === "Alternative Group" ? 2 : 1), `${item.title}: empty or insufficient published container children.`, errors);
-    const starts = direct.map((child) => child.start).filter(Boolean).sort((a, b) => Date.parse(a) - Date.parse(b));
-    const ends = direct.map((child) => child.end || child.start).filter(Boolean).sort((a, b) => Date.parse(a) - Date.parse(b));
+    const starts = direct.map((child) => child.start).filter(Boolean).sort((a, b) => boundary(a) - boundary(b));
+    const ends = direct.map((child) => child.end || child.start).filter(Boolean).sort((a, b) => boundary(a, true) - boundary(b, true));
     if (!item.start) { item.start = starts[0] || null; item.end = ends.at(-1) || null; }
-    else requireValue(starts.every((start) => Date.parse(start) >= Date.parse(item.start)) && ends.every((end) => Date.parse(end) <= Date.parse(item.end || item.start)), `${item.title}: Period must contain all children.`, errors);
+    else requireValue(starts.every((start) => boundary(start) >= boundary(item.start)) && ends.every((end) => boundary(end, true) <= boundary(item.end || item.start, true)), `${item.title}: Period must contain all children.`, errors);
   }
   items.forEach(validateContainer);
   items.sort(compareItems);

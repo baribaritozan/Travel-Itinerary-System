@@ -155,7 +155,7 @@ export function initialTimeRange(nodes, day, timeZone) {
   const timed = nodes.filter((node) => node.start?.includes("T"));
   if (!timed.length) return { start: 0, end: 1440 };
   const start = Math.min(...timed.map((node) => minuteInDay(node.start, day, timeZone)));
-  const end = Math.max(...timed.map((node) => minuteInDay(node.end || node.start, day, timeZone)));
+  const end = Math.max(...timed.map((node) => minuteInDay(node.end || node.start, day, timeZone) + (!node.end || node.end === node.start ? 15 : 0)));
   const roundedStart = Math.min(1425, Math.floor(start / 15) * 15);
   return { start: roundedStart, end: Math.min(1440, Math.max(roundedStart + 15, Math.ceil(end / 15) * 15)) };
 }

@@ -39,7 +39,9 @@ test("time initial range rounds to 15 minutes, empty/all-day full day, instant h
   assert.deepEqual(initialTimeRange(items.slice(0, 5), day, zone), { start: 540, end: 780 });
   assert.deepEqual(initialTimeRange([], day, zone), { start: 0, end: 1440 });
   assert.deepEqual(initialTimeRange([{ start: day }], day, zone), { start: 0, end: 1440 });
-  assert.deepEqual(initialTimeRange([{ start: `${day}T00:07:00Z` }], day, zone), { start: 540, end: 555 });
+  assert.deepEqual(initialTimeRange([{ start: `${day}T00:07:00Z` }], day, zone), { start: 540, end: 570 });
+  const instant = { start: `${day}T05:00:00Z` }, range = initialTimeRange([...items.slice(0, 5), instant], day, zone);
+  assert.equal(range.end, 855); assert.equal(overlapsRange(instant, range, day, zone), true, "last instantaneous item is included initially");
 });
 test("half-open overlap, no end, all-day, representative containers and day boundaries", () => {
   const range = { start: 600, end: 660 };

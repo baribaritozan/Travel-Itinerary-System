@@ -20,6 +20,14 @@ test("Structure absent means Item and Parent absent means root", () => {
   const item = page("legacy"); delete item.properties.Structure; delete item.properties.Parent;
   assert.equal(build([item]).items[0].structure, "Item"); assert.equal(build([item]).items[0].parentId, null);
 });
+test("all-day container Period contains timed children in the Trip timezone, including the end calendar day", () => {
+  const pages = fixture(); pages[0].properties.Period = { date: { start: "2026-11-01" } };
+  assert.equal(build(pages).items.find((node) => node.structure === "Alternative Group").start, "2026-11-01");
+  pages[0].properties.Period = { date: { start: "2026-10-31", end: "2026-11-01" } };
+  assert.doesNotThrow(() => build(pages));
+  pages[0].properties.Period = { date: { start: "2026-10-31" } };
+  assert.throws(() => build(pages), /contain/);
+});
 for (const [name, mutate, pattern] of [
   ["cycle", (p) => p[0].properties.Parent = rel(p[1].id), /cycle/],
   ["multiple parents", (p) => p[2].properties.Parent = rel(p[0].id, p[1].id), /multiple parents/],

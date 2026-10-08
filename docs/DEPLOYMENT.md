@@ -142,3 +142,17 @@ Workerを先に公開し、Developer portalのConnection設定 `Webhooks → Cre
 | 地図だけ読み込めない | Leaflet CDN/OSMの通信。旅程詳細の外部地図リンクは利用可能 |
 
 本手順書の追加時点では、Cloudflareへのデプロイ・Notion UI/DB/Secretの変更は実施していない。
+
+## Phase 2 へ更新する場合
+
+1. Itinerary Itemsで `Structure` を **Select** 型として追加し、英語の正規option `Item` / `Alternative Group` / `Series` を設定する。同名列がある場合は型・optionを確認して再利用し、重複列を作らない。
+2. `Parent` を **Relation** 型として追加し、参照先に同じ **Itinerary Items** を選ぶ。逆方向プロパティは不要なので一方向にする。Notion UIで選択可能なら1ページに制限する。APIでも0または1件を検証する。
+3. 既存の通常項目はStructure未設定をItemと解釈するため、既存行を一括更新しない。新規のグループ/系列だけStructureを指定し、新規子のParentにその親を登録する。Tripは親子で同じ旅行を明示する。
+4. 公開グループには2件以上の公開直接候補（Item/Series）、系列には1件以上の公開直接Itemを登録する。最大はAlternative Group→Series→Item。子を公開する場合は親も公開する。
+5. 親Periodを空にすると公開子から代表期間を算出する。設定済みPeriodは子全体を包含させる。親のStatus/Type/費用/場所は独立し、子へ継承しない。通常ItemのPeriodと場所、TransitのFrom/ToはPhase 1と同じ。
+6. `npm test`、`npm run test:browser`、`npm run build`、全JS/MJSの `node --check`、`git diff --check` を実行し、画像を確認する。既存wrangler.jsoncを使って `npx wrangler deploy --dry-run` → `npx wrangler deploy` を実行する。
+7. 本番の「Notionから再取得」でstructure/parentIdをキャッシュへ反映する。60秒クールダウン中は待ち、staleの場合は不正階層や期間を確認する。既存のDO・Secret・Webhook・Data Sourceはそのまま利用する。
+
+復旧点のbranch/tagと本番versionを更新前に記録する。復旧にはbaseline tagから新しいworktree/復旧branchを作り、検証・build後、既存Workerへデプロイする。元checkoutをresetしない。追加した任意プロパティはbaseline codeが無視できるので残す。検証用の `[Phase2 Sample]` 行は最終Publish=falseに戻し、再取得後の本番API/画面から消えたことを確認する。
+
+このタスクで実施したスキーマ追加・サンプル・本番version・smoke結果は [PHASE2_REPORT.md](./PHASE2_REPORT.md) に記録する。既存行・既存プロパティの削除、名前/型変更、値clearは行わない。

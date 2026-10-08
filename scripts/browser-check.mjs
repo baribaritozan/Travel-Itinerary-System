@@ -212,3 +212,122 @@ test("loading and initial API failure offer retry, then itinerary succeeds", asy
   await page.clock.install({ time: new Date("2026-10-08T15:30:00Z") });
   await page.goto(base, { waitUntil: "domcontentloaded" }); assert.match(await page.locator(".loading").innerText(), /読み込んでいます/); await page.locator(".retry").waitFor(); await page.locator(".retry").click(); await page.locator(".item").first().waitFor(); assert.equal(attempt, 2);
 });
+
+const phase2Fixture = {
+  ...structuredClone(fixture),
+  items: [
+    { id: "group", title: "午前の比較", structure: "Alternative Group", type: "Activity", start: "2026-10-09T00:00:00Z", end: "2026-10-09T04:00:00Z", placeId: "hotel" },
+    { id: "series", title: "寺と食事の系列", structure: "Series", parentId: "group", type: "Activity", status: "Confirmed", order: 10, start: "2026-10-09T00:00:00Z", end: "2026-10-09T03:00:00Z" },
+    { id: "child-a", title: "系列の寺", parentId: "series", type: "Sightseeing", status: "Confirmed", reservationStatus: "Required", transport: "Walk", start: "2026-10-09T00:00:00Z", end: "2026-10-09T01:00:00Z", placeId: "temple", notes: "系列の公開詳細" },
+    { id: "child-b", title: "系列の移動", parentId: "series", type: "Transit", status: "Candidate", reservationStatus: "Pending", transport: "Bus", start: "2026-10-09T02:00:00Z", end: "2026-10-09T03:00:00Z", fromId: "temple", toId: "station" },
+    { id: "single", title: "宿で食事", parentId: "group", type: "Meal", status: "Tentative", order: -100, reservationStatus: "Booked", start: "2026-10-09T00:00:00Z", end: "2026-10-09T02:00:00Z", placeId: "hotel", perPersonCost: 1500, currency: "JPY" },
+    { id: "third", title: "駅で食事", parentId: "group", type: "Meal", status: "Candidate", order: 0, reservationStatus: "Required", start: "2026-10-09T01:00:00Z", end: "2026-10-09T04:00:00Z", placeId: "station" },
+    { id: "cancelled-choice", title: "中止候補", parentId: "group", type: "Meal", status: "Cancelled", start: "2026-10-09T01:00:00Z", placeId: "hotel" },
+    { id: "later", title: "翌日の予定", type: "Meal", start: "2026-10-10T00:00:00Z", placeId: "hotel" },
+  ],
+};
+const own = (page, id, selector) => page.locator(`.item[data-id="${id}"] > ${selector}`);
+const checkState = (page, id) => own(page, id, ".select-toggle").getAttribute("aria-checked");
+async function revealSeries(page) { await own(page, "series", ".details-toggle").click(); }
+async function checkPhase2Targets(page) {
+  assert.deepEqual(await page.locator("button, summary, input[type=range], .check-label").evaluateAll((els) => els.filter((el) => { const r = el.getBoundingClientRect(); return r.width && r.height && (r.width < 44 || r.height < 44); }).map((el) => ({ class: el.className, text: el.textContent }))), []);
+  await noOverflow(page);
+}
+test("Phase 2 mobile: one candidate, buttons/arrows/swipe, active Series map and independent child detail/focus", async (t) => {
+  const { page } = await open(t, { payload: phase2Fixture });
+  assert.equal(await page.locator('.activate-candidate[aria-pressed="true"]').getAttribute("data-activate"), "series");
+  assert.equal(await page.locator(".place-pin").count(), 2); assert.equal(await page.locator(".route-hit").count(), 1);
+  const carousel = page.locator(".group-candidates"), width = (await carousel.boundingBox()).width;
+  assert.ok(Math.abs((await page.locator(".candidate-slot").first().boundingBox()).width - width) < 12);
+  await own(page, "group", ".card-focus").tap(); assert.equal(await page.locator(".focused-pin").count(), 2);
+  await page.getByRole("button", { name: "午前の比較の次の候補", exact: true }).tap(); await page.clock.runFor(400);
+  assert.equal(await page.locator('.activate-candidate[aria-pressed="true"]').getAttribute("data-activate"), "single"); assert.equal(await page.locator(".place-pin").count(), 1); assert.equal(await page.locator(".focused-pin").count(), 1);
+  await carousel.focus(); await page.keyboard.press("ArrowRight"); await page.clock.runFor(300); assert.equal(await page.locator('.activate-candidate[aria-pressed="true"]').getAttribute("data-activate"), "third");
+  await carousel.scrollIntoViewIfNeeded();
+  const cdp = await page.context().newCDPSession(page), r = await carousel.boundingBox(), clip = await page.locator(".timeline-panel").boundingBox();
+  const touchY = Math.min(clip.y + clip.height - 40, Math.max(r.y, clip.y) + 60), touchX = r.x + r.width * .15;
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: touchX, y: touchY }] });
+  for (let step = 1; step <= 8; step++) { await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: touchX + r.width * .7 * step / 8, y: touchY }] }); await new Promise((resolve) => setTimeout(resolve, 25)); }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] }); await page.clock.runFor(700);
+  assert.equal(await page.locator('.activate-candidate[aria-pressed="true"]').getAttribute("data-activate"), "single", `actual horizontal touch gesture switches candidate: ${JSON.stringify({ r, clip, scroll: await carousel.evaluate((el) => el.scrollLeft) })}`);
+  await carousel.focus(); await page.keyboard.press("Home"); await page.clock.runFor(400); await cdp.detach();
+  assert.equal(await page.locator('.activate-candidate[aria-pressed="true"]').getAttribute("data-activate"), "series");
+  await revealSeries(page); await own(page, "child-a", ".card-focus").tap(); assert.equal(await selected(page), "child-a");
+  await own(page, "child-a", ".details-toggle").tap(); await own(page, "child-b", ".card-focus").tap(); assert.equal(await selected(page), "child-b");
+  assert.equal(await own(page, "child-a", ".details-toggle").getAttribute("aria-expanded"), "true"); assert.match(await card(page, "child-a").locator(".notes").innerText(), /公開詳細/);
+  await own(page, "child-a", ".card-focus").scrollIntoViewIfNeeded(); await page.screenshot({ path: "artifacts/phase2-mobile-series.png" });
+  await checkPhase2Targets(page); await own(page, "group", ".card-focus").scrollIntoViewIfNeeded(); await page.screenshot({ path: "artifacts/phase2-mobile-390x844.png" });
+});
+test("Phase 2 desktop: 2–3 visible candidates, explicit active state, group/Series/child map focus and no duplicate fallback pin", async (t) => {
+  const { page } = await open(t, { desktop: true, payload: phase2Fixture });
+  const visibleSlots = () => page.locator(".candidate-slot").evaluateAll((els) => { const r = els[0].parentElement.getBoundingClientRect(); return els.filter((el) => { const b = el.getBoundingClientRect(); return b.left >= r.left - 1 && b.right <= r.right + 1; }).length; });
+  assert.equal(await visibleSlots(), 3); await page.setViewportSize({ width: 1100, height: 900 }); assert.equal(await visibleSlots(), 2); await page.setViewportSize({ width: 1440, height: 900 });
+  await own(page, "single", ".card-focus").click(); assert.equal(await page.locator('.activate-candidate[aria-pressed="true"]').getAttribute("data-activate"), "single"); assert.equal(await selected(page), "single");
+  await page.locator('[data-activate="series"]').click(); await revealSeries(page); await own(page, "series", ".card-focus").click(); assert.equal(await selected(page), "series"); assert.equal(await page.locator(".focused-pin").count(), 2);
+  assert.equal(await page.locator('.place-pin[title^="宿："]').count(), 0, "group own Place does not duplicate or add child map data");
+  await page.locator('.place-pin[title^="清水寺："]').focus(); await page.keyboard.press("Space"); await page.getByRole("button", { name: "09:00 系列の寺", exact: true }).click(); await page.clock.runFor(1200); assert.equal(await selected(page), "child-a");
+  await checkPhase2Targets(page); await own(page, "group", ".card-focus").scrollIntoViewIfNeeded(); await page.screenshot({ path: "artifacts/phase2-desktop-1440x900.png" });
+  await own(page, "child-a", ".card-focus").scrollIntoViewIfNeeded(); await page.screenshot({ path: "artifacts/phase2-desktop-series.png" });
+});
+test("Phase 2 selection: mixed parents use hidden descendants, selected map shape, date/filter retention and clear", async (t) => {
+  const { page } = await open(t, { desktop: true, payload: phase2Fixture }); await revealSeries(page);
+  await own(page, "child-a", ".select-toggle").focus(); await page.keyboard.press("Space");
+  assert.equal(await checkState(page, "group"), "mixed"); assert.equal(await checkState(page, "series"), "mixed"); assert.equal(await page.locator(".selected-pin").count(), 1); assert.ok(await page.locator(".unselected-pin").count());
+  await own(page, "child-a", ".card-focus").click(); await own(page, "child-b", ".card-focus").click(); assert.equal(await checkState(page, "child-a"), "true");
+  await page.locator(".filter-panel > summary").click(); await page.locator('[data-filter="type"][value="Meal"]').check();
+  assert.match(await page.locator(".comparison-status").innerText(), /非表示 1件/); assert.equal(await checkState(page, "group"), "mixed");
+  await own(page, "group", ".select-toggle").click(); assert.equal(await checkState(page, "group"), "true"); assert.match(await page.locator(".comparison-status").innerText(), /選択 5件/);
+  await page.locator('[data-day="2026-10-10"]').click(); assert.match(await page.locator(".comparison-status").innerText(), /選択 5件/);
+  await page.locator('[data-day="2026-10-09"]').click(); assert.equal(await checkState(page, "group"), "true");
+  await own(page, "group", ".select-toggle").click(); assert.equal(await checkState(page, "group"), "false");
+  await own(page, "group", ".select-toggle").click(); await page.locator(".clear-selection").click(); assert.match(await page.locator(".comparison-status").innerText(), /選択 0件/);
+});
+test("Phase 2 filters: OR/AND, ancestors, reservation shortcut, Cancelled gate, notification and reset", async (t) => {
+  const { page } = await open(t, { desktop: true, payload: phase2Fixture }); await revealSeries(page);
+  await own(page, "child-a", ".card-focus").click(); await page.locator(".filter-panel > summary").click();
+  await page.locator('[data-filter="type"][value="Meal"]').check(); assert.equal(await page.locator(".item.active").count(), 0); assert.match(await page.locator(".focus-status").innerText(), /解除/);
+  await page.locator('[data-filter="type"][value="Transit"]').check(); await page.locator('[data-filter="reservationStatus"][value="Required"]').check();
+  assert.deepEqual(await page.locator(".item").evaluateAll((els) => els.map((el) => el.dataset.id)), ["group", "third"]);
+  await page.locator(".clear-filters").click(); await page.locator(".reservation-shortcut").click();
+  assert.deepEqual(await page.locator(".item").evaluateAll((els) => els.map((el) => el.dataset.id)), ["group", "series", "child-a", "child-b", "third"]);
+  await page.locator(".clear-filters").click(); assert.equal(await card(page, "cancelled-choice").count(), 0); await page.locator(".show-cancelled").check(); assert.equal(await card(page, "cancelled-choice").count(), 1);
+  await page.locator(".clear-filters").click(); assert.equal(await card(page, "cancelled-choice").count(), 0); assert.doesNotMatch(await page.locator(".comparison-status").innerText(), /フィルター中/);
+  await page.locator(".filter-panel").scrollIntoViewIfNeeded(); await page.screenshot({ path: "artifacts/phase2-desktop-filters.png" });
+});
+test("Phase 2 map time: 15 minute keyboard/range changes preserve timeline, focus, selection and width at boundaries", async (t) => {
+  const payload = structuredClone(phase2Fixture); delete payload.items[0].placeId;
+  const { page } = await open(t, { desktop: true, payload }); await revealSeries(page);
+  await own(page, "child-a", ".select-toggle").click(); await own(page, "child-a", ".card-focus").click();
+  const ids = await page.locator(".item").evaluateAll((els) => els.map((el) => el.dataset.id));
+  await page.locator(".time-panel > summary").click(); assert.equal(await page.locator(".time-start").inputValue(), "540"); assert.equal(await page.locator(".time-end").inputValue(), "780");
+  await page.locator(".time-start").focus(); await page.keyboard.press("ArrowRight"); assert.equal(await page.locator(".time-start").inputValue(), "555");
+  await page.locator(".time-start").evaluate((el) => { el.value = 600; el.dispatchEvent(new Event("input", { bubbles: true })); });
+  await page.locator(".time-end").evaluate((el) => { el.value = 660; el.dispatchEvent(new Event("input", { bubbles: true })); });
+  assert.equal(await page.locator(".place-pin").count(), 0, "endpoint 10:00 excludes 09–10 and 11–12"); assert.equal(await selected(page), "child-a"); assert.equal(await checkState(page, "child-a"), "true");
+  assert.deepEqual(await page.locator(".item").evaluateAll((els) => els.map((el) => el.dataset.id)), ids);
+  await page.locator(".time-next").click(); assert.equal(await page.locator(".time-start").inputValue(), "660"); assert.equal(await page.locator(".route-hit").count(), 1);
+  await page.locator(".time-start").evaluate((el) => { el.value = 0; el.dispatchEvent(new Event("input", { bubbles: true })); }); await page.locator(".time-end").evaluate((el) => { el.value = 60; el.dispatchEvent(new Event("input", { bubbles: true })); }); assert.equal(await page.locator(".time-prev").isDisabled(), true);
+  await page.locator(".time-end").evaluate((el) => { el.value = 1440; el.dispatchEvent(new Event("input", { bubbles: true })); }); await page.locator(".time-start").evaluate((el) => { el.value = 1380; el.dispatchEvent(new Event("input", { bubbles: true })); }); assert.equal(await page.locator(".time-next").isDisabled(), true);
+  await page.locator(".time-reset").click(); assert.equal(await page.locator(".time-start").inputValue(), "540"); assert.equal(await page.locator(".time-end").inputValue(), "780");
+});
+test("Phase 2 refresh: existing selection/detail/active/time retained and removed IDs pruned", async (t) => {
+  const { page, context } = await open(t, { desktop: true, payload: phase2Fixture }); await revealSeries(page); await own(page, "child-a", ".select-toggle").click();
+  await page.locator('[data-activate="single"]').click(); await own(page, "single", ".select-toggle").click(); await own(page, "single", ".details-toggle").click(); await own(page, "single", ".card-focus").click();
+  const refreshed = structuredClone(phase2Fixture); refreshed.items = refreshed.items.filter((item) => item.id !== "child-a");
+  await context.route("**/api/refresh?*", (route) => route.fulfill({ contentType: "application/json", headers: { "X-Itinerary-Cache": "refreshed" }, body: JSON.stringify(refreshed) }));
+  await page.locator(".publish-button").click(); await page.locator(".publish-status").filter({ hasText: "最新の旅程" }).waitFor();
+  assert.match(await page.locator(".comparison-status").innerText(), /選択 1件/); assert.equal(await checkState(page, "single"), "true"); assert.equal(await own(page, "single", ".details-toggle").getAttribute("aria-expanded"), "true");
+  assert.equal(await page.locator('.activate-candidate[aria-pressed="true"]').getAttribute("data-activate"), "single"); assert.equal(await selected(page), "single"); assert.equal(await page.locator(".time-start").inputValue(), "540");
+});
+test("Phase 2 accessible mobile 200% text/reduced motion, filters and time panel, keyboard Enter/Space and selected only", async (t) => {
+  const { page } = await open(t, { payload: phase2Fixture });
+  await page.addStyleTag({ content: "html { font-size: 200%; }" }); await page.locator(".filter-panel > summary").focus(); await page.keyboard.press("Enter");
+  await page.locator(".reservation-shortcut").focus(); await page.keyboard.press("Space");
+  await own(page, "group", ".select-toggle").focus(); await page.keyboard.press("Space"); await page.locator(".selected-only").check();
+  assert.match(await page.locator(".comparison-status").innerText(), /選択 5件/); await page.locator(".time-panel > summary").click();
+  await checkPhase2Targets(page); await page.locator(".time-panel").scrollIntoViewIfNeeded(); await page.screenshot({ path: "artifacts/phase2-mobile-text-200-percent.png" });
+  await page.locator(".filter-panel").scrollIntoViewIfNeeded(); await page.screenshot({ path: "artifacts/phase2-mobile-text-200-filters.png" });
+  await page.locator(".filter-panel > summary").click(); await page.locator(".time-panel > summary").click(); await revealSeries(page);
+  await own(page, "child-a", ".card-focus").scrollIntoViewIfNeeded(); await checkPhase2Targets(page); await page.screenshot({ path: "artifacts/phase2-mobile-text-200-series.png" });
+  assert.equal(await page.evaluate(() => __mapCalls.options.filter((call) => call.options?.animate === true).length), 0);
+});
