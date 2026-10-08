@@ -1,6 +1,6 @@
-# Phase 2 実装・検証報告（ローカル検証完了・本番検証待ち）
+# Phase 2 実装・検証報告
 
-正式要求: SPECIFICATION.md v0.3。未完了項目を成功扱いにしない。Git baseline・要件対応はPHASE2_PLAN.md参照。
+正式要求: SPECIFICATION.md v0.3。2026-10-08（JST）、FR-12〜FR-17とPhase 2受け入れ基準1〜15を実装・検証し、本番デプロイとsmokeを完了。Phase 1の全テスト・境界を維持。Git baseline・要件対応はPHASE2_PLAN.md参照。
 
 ## 変更前の検証
 
@@ -14,7 +14,6 @@ Git最初のpushはsandbox内DNSで失敗（Could not resolve host: github.com�
 | --- | --- | --- |
 | 2026-10-08 23:13頃 | Itinerary ItemsへStructure Select追加 | Item / Alternative Group / Series。既存optionを変更せず追加 |
 | 2026-10-08 23:13頃 | Itinerary ItemsへParent Relation追加 | 同一DBへの一方向自己Relation。既存Relation変更なし |
-
 | 2026-10-08 23:25頃 | [Phase2 Sample] 午前の比較 | 新規Alternative Group、Publish=false |
 | 2026-10-08 23:26頃 | [Phase2 Sample] 寺と移動の系列 | 新規Series、上記グループの子、Publish=false |
 | 2026-10-08 23:26頃 | [Phase2 Sample] 単独候補 | 新規Item、上記グループの子、2026-11-14 09:00–11:00 JST、Publish=false |
@@ -27,7 +26,7 @@ Git最初のpushはsandbox内DNSで失敗（Could not resolve host: github.com�
 
 既存Worker: travel-itinerary。URL: https://travel-itinerary.baribaritozan.workers.dev 。直前version: 65cfdd10-68ee-44c1-a49a-141612930f87。wrangler deployments list成功。
 
-2026-10-08 23:29 JSTの本番baseline smoke: 390×844/1440×900、初期表示、日付切替、単一フォーカス、詳細展開、地図2地点、横溢れなし、uncaught errorなし。API公開3件、サンプル0件、公開ID境界成功。artifacts/phase2-production-baseline.jsonと同baseline-390.png / baseline-1440.png。既存3行のproperties hashをローカル（Git対象外）に保存し、実環境検証後に比較する。
+2026-10-08 23:29 JSTの本番baseline smoke: 390×844/1440×900、初期表示、日付切替、単一フォーカス、詳細展開、地図2地点、横溢れなし、uncaught errorなし。API公開3件、サンプル0件、公開ID境界成功。artifacts/phase2-production-baseline.jsonと同baseline-390.png / baseline-1440.png。既存3行のproperties hashをローカル（Git対象外）に保存し、実環境検証後に完全一致を確認した。
 
 復旧は `git worktree add -b recovery/phase2-YYYYMMDD-HHMMSS ../phase2-recovery phase2-baseline-20261008-230918` で新規checkoutを作成し、npm ci / npm run build / テストを実行後、同じwrangler.jsoncのtravel-itineraryへデプロイする。元checkoutをresetしない。Notion追加プロパティはbaseline codeが無視するため残す。サンプルはPublish=falseへ戻し、再取得・API/画面を確認する。
 
@@ -81,6 +80,45 @@ Node実体: `C:\Users\wyuya\AppData\Local\Volta\tools\image\node\24.21.0\node.ex
 
 scripts/notion.mjs（階層/期間/ID変換）、public/model.mjs（ツリー/選択/フィルター/時間/地図対象）、public/app.js（独立状態/候補/系列/操作）、public/styles.css（比較レイアウト/選択形状/44px/文字拡大）、tests/phase2-sync.test.mjs、tests/phase2-model.test.mjs、scripts/browser-check.mjs（既存13件をそのまま残して7件追加）、README.md、docs/DEPLOYMENT.md、PHASE2_PLAN.md、PHASE2_REPORT.md。開始時のSPECIFICATION.md/PHASE2_GOAL_PROMPT.mdはsnapshot保存後編集なし。
 
-checkpoint: `9def321`（階層・モデル・検証計画、push済み）。次の検証済みcommit SHA、デプロイ、サンプル最終状態、本番smoke、PRは実施後に追記する。
+checkpoint: `9def321`（階層・モデル・検証計画、push済み）。検証済み実装commit: `0a82138fc58640c4106a24ab48b5edd94a2d532c`（UI/全検証/手順、push済み）。以降のcommitは本番結果の報告書のみを更新し、デプロイ済みソース・assetsは同一。
 
-制約: 実機iOS/Safariは対象外の追加互換検証。Phase 3、採用候補のNotion保存、Web編集は実装しない。デプロイ・実環境smoke・サンプル後片付け・PRはまだ未完了。
+PR: [Implement Phase 2 itinerary comparison and planning #1](https://github.com/baribaritozan/Travel-Itinerary-System/pull/1)。base main、head codex/phase2-20261008-230918。open、未merge。PRを本チャットに添付済み。force-push/rebase/共有branch更新/remote tag削除なし。
+
+## 本番デプロイと実環境結果
+
+| 項目 | 証拠 / 結果 |
+| --- | --- |
+| Worker / URL | travel-itinerary / https://travel-itinerary.baribaritozan.workers.dev |
+| デプロイ時刻 | 2026-10-08 23:41:33.909 JST |
+| 実装commit | 0a82138fc58640c4106a24ab48b5edd94a2d532c |
+| deployment ID | 7c5ad00b-005b-43a6-9f83-4f606d4b144a |
+| version ID / traffic | 87cc8434-86d1-49d4-8f91-a81788237157 / 100% |
+| 手順 | npm exec --yes -- wrangler deploy --dry-run → wrangler deploy。既存wrangler.jsonc使用、binding/Secret/account/environment追加なし |
+| dry-run / deploy | 成功、artifacts/phase2-deploy-dry-run.txt、phase2-deploy.txt |
+| deployment確認 | 既存キャッシュのwrangler/bin/wrangler.jsをNode実体で deployments status --json、成功。artifacts/phase2-deployment-status.json |
+| 本番smoke期間 | 2026-10-08 23:43:37〜23:44:56 JST、node artifacts/live-phase2.mjs 0a82138fc58640c4106a24ab48b5edd94a2d532c |
+| 本番条件 | 390×844のタッチ相当、1440×900 PC、390×844でLeaflet script遮断。3/3成功 |
+| 確認項目 | 初期表示、旅行日付、Phase 1単一フォーカス/独立詳細、候補順/前後/矢印/Homeと地図、系列内フォーカス/詳細、親子選択/地図強調、分類/予約/Cancelled/解除、時間範囲/前後/初期化、日付後の選択保持、手動再取得 |
+| 実Notion→API | 5サンプルが公開されAPI全8件、structure/公開parentId/フラット配列、親Periodを子から算出。内部ID非公開 |
+| 通常時エラー | console error 0、uncaught 0、横溢れなし。Leaflet遮断時は期待されたブラウザnetwork errorのみ、全旅程操作と外部地図リンク継続 |
+| 後片付け | 全5行Publish=falseを再読取、公開API全3件/サンプル0件、公開画面サンプル0件。削除/archiveなし |
+| 既存データ | 開始時の公開3行のproperties hash全件一致。既存行の値を変更していない |
+| ローカル証拠 | artifacts/phase2-production-results.json、phase2-production-command.txt、phase2-production-0.png / -1.png / -2.png、phase2-production-cleanup.png。画像を実際に確認 |
+
+既存クールダウンを守るため、Notion非公開化後、最初の成功再取得から62秒以上になるまで待ってから1回だけ再取得した。実公開は各行約15〜18秒。キャッシュ内のサンプルも23:44:56 JSTまでに除去を確認した。
+
+### 新規サンプルの一時公開・非公開記録（全て2026-10-08 JST）
+
+| 名称 | Publish=true | Publish=false | 最終状態 |
+| --- | --- | --- | --- |
+| [Phase2 Sample] 移動の子項目 | 23:43:40.941 | 23:43:58.476 | false、削除/archiveなし |
+| [Phase2 Sample] 寺の子項目 | 23:43:41.466 | 23:43:57.166 | false、削除/archiveなし |
+| [Phase2 Sample] 単独候補 | 23:43:41.995 | 23:43:56.647 | false、削除/archiveなし |
+| [Phase2 Sample] 寺と移動の系列 | 23:43:42.549 | 23:43:56.117 | false、削除/archiveなし |
+| [Phase2 Sample] 午前の比較 | 23:43:43.489 | 23:43:55.528 | false、削除/archiveなし |
+
+API検証・ブラウザ検証はtry/finallyで実行し、エラー時もこのallowlistの新規サンプルだけを非公開へ戻す。秘密値/内部ID/ローカル証拠はGitへ追加しない。Notion追加Structure/Parentは残し、baseline codeが無視できる。重大な回帰なし、rollback不要。
+
+補足コマンド: sandbox内のnpm exec wrangler deployments status --helpはregistry.npmjs.orgのENOTFOUNDで失敗。OS設定を変えず、既に存在するnpmキャッシュのWrangler 4.148.0をNode実体で直接起動し、正式helpで--jsonを確認、許可された実行環境でstatus取得に成功。GitHub connectorでPR作成成功。
+
+既知の制約: 実機iOS/Safariは追加互換検証の範囲。外部CDN/タイルの将来稼働は保証せず、失敗時の継続利用を検証した。Phase 3、採用候補のNotion保存、Web編集は対象外。Phase 2必須要件・検証・実環境操作の未達なし。
