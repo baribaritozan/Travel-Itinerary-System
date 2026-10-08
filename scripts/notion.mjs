@@ -118,11 +118,13 @@ export function buildTripPayload({ tripPage, placePages, itemPages, generatedAt 
   const placesById = new Map(places.map((place) => [place.id, place]));
 
   const items = itemPages
-    .filter((page) => relationIds(page.properties.Trip).includes(trip.id))
+    .filter((page) => page.properties.Publish?.checkbox !== false && relationIds(page.properties.Trip).includes(trip.id))
     .map((page) => {
       const period = validatedPeriod(dateValue(page.properties.Period), trip.timezone, `Itinerary item ${page.id}`, errors);
       const item = {
         id: normalizeId(page.id),
+        structure: selectName(page.properties.Structure) ?? "Item",
+        parentId: relationIds(page.properties.Parent)[0] ?? null,
         title: plainText(page.properties.Item),
         start: period.start,
         end: period.end,
@@ -144,16 +146,53 @@ export function buildTripPayload({ tripPage, placePages, itemPages, generatedAt 
       };
 
       requireValue(item.title, `Itinerary item ${page.id}: Item is required.`, errors);
-      requireValue(item.start, `Itinerary item ${item.title || page.id}: Period is required.`, errors);
-      if (item.type === "Transit") {
+      requireValue(["Item", "Alternative Group", "Series"].includes(item.structure), `${item.title}: invalid Structure.`, errors);
+      requireValue(relationIds(page.properties.Parent).length <= 1 && !page.properties.Parent?.has_more, `${item.title}: multiple parents are forbidden.`, errors);
+      requireValue(relationIds(page.properties.Trip).length === 1 && !page.properties.Trip?.has_more, `${item.title}: exactly one Trip is required.`, errors);
+      if (item.structure === "Item") requireValue(item.start, `Itinerary item ${item.title || page.id}: Period is required.`, errors);
+      if (item.structure === "Item" && item.type === "Transit") {
         requireValue(item.fromId && placesById.has(item.fromId), `Transit ${item.title}: published From place is required.`, errors);
         requireValue(item.toId && placesById.has(item.toId), `Transit ${item.title}: published To place is required.`, errors);
-      } else if (item.type !== "Note") {
+      } else if (item.structure === "Item" && item.type !== "Note") {
         requireValue(item.placeId && placesById.has(item.placeId), `${item.title}: published Place is required.`, errors);
       }
+      for (const id of [item.placeId, item.fromId, item.toId].filter(Boolean)) requireValue(placesById.has(id), `${item.title}: unpublished place reference.`, errors);
       return item;
-    })
-    .sort(compareItems);
+    });
+
+  const nodes = new Map(items.map((item) => [item.id, item]));
+  const children = new Map(items.map((item) => [item.id, []]));
+  for (const item of items) {
+    if (!item.parentId) continue;
+    const parent = nodes.get(item.parentId);
+    requireValue(parent, `${item.title}: Parent must be published and belong to the same Trip (orphan reference).`, errors);
+    if (!parent) continue;
+    children.get(parent.id).push(item);
+    requireValue(parent.structure === "Alternative Group" && ["Item", "Series"].includes(item.structure) || parent.structure === "Series" && item.structure === "Item", `${item.title}: forbidden nesting or Item parent.`, errors);
+  }
+  const visiting = new Set(), visited = new Set();
+  function boundary(value, end = false) {
+    if (!value) return NaN;
+    if (value.includes("T")) return Date.parse(value);
+    const day = end ? new Date(Date.parse(value) + 86400000).toISOString().slice(0, 10) : value;
+    return Date.parse(normalizeDate(`${day}T00:00:00`, trip.timezone));
+  }
+  function validateContainer(item) {
+    if (visiting.has(item.id)) { errors.push(`${item.title}: cycle in Parent relations.`); return; }
+    if (visited.has(item.id)) return;
+    visiting.add(item.id);
+    const direct = children.get(item.id);
+    direct.forEach(validateContainer);
+    visiting.delete(item.id); visited.add(item.id);
+    if (item.structure === "Item") return;
+    requireValue(direct.length >= (item.structure === "Alternative Group" ? 2 : 1), `${item.title}: empty or insufficient published container children.`, errors);
+    const starts = direct.map((child) => child.start).filter(Boolean).sort((a, b) => boundary(a) - boundary(b));
+    const ends = direct.map((child) => child.end || child.start).filter(Boolean).sort((a, b) => boundary(a, true) - boundary(b, true));
+    if (!item.start) { item.start = starts[0] || null; item.end = ends.at(-1) || null; }
+    else requireValue(starts.every((start) => boundary(start) >= boundary(item.start)) && ends.every((end) => boundary(end, true) <= boundary(item.end || item.start, true)), `${item.title}: Period must contain all children.`, errors);
+  }
+  items.forEach(validateContainer);
+  items.sort(compareItems);
 
   for (const place of places) {
     requireValue((place.latitude === null && place.longitude === null) || (Number.isFinite(place.latitude) && Math.abs(place.latitude) <= 90 && Number.isFinite(place.longitude) && Math.abs(place.longitude) <= 180), `Place ${place.id}: invalid coordinates.`, errors);
@@ -255,6 +294,6 @@ export async function publicTripPayload(payload) {
   return {
     ...payload, trip,
     places: payload.places.map((place) => ({ ...place, id: ids.get(place.id), mapsUrl: urlValue({ url: place.mapsUrl }), website: urlValue({ url: place.website }) })),
-    items: payload.items.map((item) => ({ ...item, id: ids.get(item.id), placeId: ids.get(item.placeId) || null, fromId: ids.get(item.fromId) || null, toId: ids.get(item.toId) || null, navigationUrl: urlValue({ url: item.navigationUrl }), reservationUrl: urlValue({ url: item.reservationUrl }) })),
+    items: payload.items.map((item) => ({ ...item, structure: item.structure || "Item", parentId: ids.get(item.parentId) || null, id: ids.get(item.id), placeId: ids.get(item.placeId) || null, fromId: ids.get(item.fromId) || null, toId: ids.get(item.toId) || null, navigationUrl: urlValue({ url: item.navigationUrl }), reservationUrl: urlValue({ url: item.reservationUrl }) })),
   };
 }
