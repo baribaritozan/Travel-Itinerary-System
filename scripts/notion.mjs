@@ -125,6 +125,10 @@ export function buildTripPayload({ tripPage, placePages, itemPages, generatedAt 
         id: normalizeId(page.id),
         structure: selectName(page.properties.Structure) ?? "Item",
         parentId: relationIds(page.properties.Parent)[0] ?? null,
+        detourForId: relationIds(page.properties["Detour For"])[0] ?? null,
+        rejoinPlaceId: relationIds(page.properties["Rejoin Place"])[0] ?? null,
+        openingHours: plainText(page.properties["Opening Hours"]),
+        additionalDurationMinutes: numberValue(page.properties["Additional Duration Minutes"]),
         title: plainText(page.properties.Item),
         start: period.start,
         end: period.end,
@@ -146,17 +150,24 @@ export function buildTripPayload({ tripPage, placePages, itemPages, generatedAt 
       };
 
       requireValue(item.title, `Itinerary item ${page.id}: Item is required.`, errors);
-      requireValue(["Item", "Alternative Group", "Series"].includes(item.structure), `${item.title}: invalid Structure.`, errors);
+      requireValue(["Item", "Alternative Group", "Series", "Flexible Block"].includes(item.structure), `${item.title}: invalid Structure.`, errors);
       requireValue(relationIds(page.properties.Parent).length <= 1 && !page.properties.Parent?.has_more, `${item.title}: multiple parents are forbidden.`, errors);
       requireValue(relationIds(page.properties.Trip).length === 1 && !page.properties.Trip?.has_more, `${item.title}: exactly one Trip is required.`, errors);
-      if (item.structure === "Item") requireValue(item.start, `Itinerary item ${item.title || page.id}: Period is required.`, errors);
+      for (const name of ["Detour For", "Rejoin Place"]) {
+        const prop = page.properties[name];
+        requireValue(!prop || ((!prop.type || prop.type === "relation") && Array.isArray(prop.relation) && prop.relation.length <= 1 && !prop.has_more), `${item.title}: ${name} must be a complete Relation with zero or one target.`, errors);
+      }
+      for (const [name, value] of [["Duration Minutes", item.durationMinutes], ["Additional Duration Minutes", item.additionalDurationMinutes]]) {
+        requireValue(value === null || (Number.isFinite(value) && value >= 0), `${item.title}: ${name} must be finite and nonnegative.`, errors);
+      }
+      if (item.structure === "Flexible Block") requireValue(item.start && item.end, `${item.title}: Flexible Block Period start and end are required.`, errors);
       if (item.structure === "Item" && item.type === "Transit") {
         requireValue(item.fromId && placesById.has(item.fromId), `Transit ${item.title}: published From place is required.`, errors);
         requireValue(item.toId && placesById.has(item.toId), `Transit ${item.title}: published To place is required.`, errors);
       } else if (item.structure === "Item" && item.type !== "Note") {
         requireValue(item.placeId && placesById.has(item.placeId), `${item.title}: published Place is required.`, errors);
       }
-      for (const id of [item.placeId, item.fromId, item.toId].filter(Boolean)) requireValue(placesById.has(id), `${item.title}: unpublished place reference.`, errors);
+      for (const id of [item.placeId, item.fromId, item.toId, item.rejoinPlaceId].filter(Boolean)) requireValue(placesById.has(id), `${item.title}: unpublished ${id === item.rejoinPlaceId ? "Rejoin Place" : "place"} reference.`, errors);
       return item;
     });
 
@@ -168,7 +179,27 @@ export function buildTripPayload({ tripPage, placePages, itemPages, generatedAt 
     requireValue(parent, `${item.title}: Parent must be published and belong to the same Trip (orphan reference).`, errors);
     if (!parent) continue;
     children.get(parent.id).push(item);
-    requireValue(parent.structure === "Alternative Group" && ["Item", "Series"].includes(item.structure) || parent.structure === "Series" && item.structure === "Item", `${item.title}: forbidden nesting or Item parent.`, errors);
+    const allowed = { "Alternative Group": ["Item", "Series", "Flexible Block"], Series: ["Item", "Flexible Block"], "Flexible Block": ["Item"] };
+    requireValue(allowed[parent.structure]?.includes(item.structure), `${item.title}: forbidden nesting or Item parent.`, errors);
+  }
+  function ancestry(item) {
+    const result = [], seen = new Set();
+    while (item && !seen.has(item.id)) { result.push(item); seen.add(item.id); item = nodes.get(item.parentId); }
+    return result;
+  }
+  for (const item of items) {
+    const chain = ancestry(item), root = chain.at(-1), inDetour = !!root?.detourForId;
+    if (item.detourForId) {
+      const target = nodes.get(item.detourForId);
+      requireValue(!item.parentId, `${item.title}: Detour For is only allowed on a root.`, errors);
+      requireValue(target && target.id !== item.id && target.structure === "Item" && target.type === "Transit" && !ancestry(target).some(n => n.id === item.id), `${item.title}: Detour For must reference a published same Trip Transit Item, never self or descendants.`, errors);
+      requireValue(Number.isFinite(item.additionalDurationMinutes) && item.additionalDurationMinutes >= 0, `${item.title}: Additional Duration Minutes is required for a detour.`, errors);
+    }
+    requireValue(!inDetour || item.structure !== "Flexible Block", `${item.title}: Flexible Block is forbidden in a detour.`, errors);
+    if (item.structure === "Item" && !item.start) {
+      requireValue(inDetour || nodes.get(item.parentId)?.structure === "Flexible Block", `${item.title}: Period is required.`, errors);
+      if (inDetour) requireValue(Number.isFinite(item.durationMinutes) && item.durationMinutes >= 0, `${item.title}: Duration Minutes is required for an untimed detour Item.`, errors);
+    }
   }
   const visiting = new Set(), visited = new Set();
   function boundary(value, end = false) {
@@ -188,7 +219,7 @@ export function buildTripPayload({ tripPage, placePages, itemPages, generatedAt 
     requireValue(direct.length >= (item.structure === "Alternative Group" ? 2 : 1), `${item.title}: empty or insufficient published container children.`, errors);
     const starts = direct.map((child) => child.start).filter(Boolean).sort((a, b) => boundary(a) - boundary(b));
     const ends = direct.map((child) => child.end || child.start).filter(Boolean).sort((a, b) => boundary(a, true) - boundary(b, true));
-    if (!item.start) { item.start = starts[0] || null; item.end = ends.at(-1) || null; }
+    if (!item.start && item.structure !== "Flexible Block") { item.start = starts[0] || null; item.end = ends.at(-1) || null; }
     else requireValue(starts.every((start) => boundary(start) >= boundary(item.start)) && ends.every((end) => boundary(end, true) <= boundary(item.end || item.start, true)), `${item.title}: Period must contain all children.`, errors);
   }
   items.forEach(validateContainer);
@@ -202,7 +233,7 @@ export function buildTripPayload({ tripPage, placePages, itemPages, generatedAt 
     throw new Error(`Notion data validation failed:\n- ${errors.join("\n- ")}`);
   }
 
-  const referencedPlaceIds = new Set(items.flatMap((item) => [item.placeId, item.fromId, item.toId]).filter(Boolean));
+  const referencedPlaceIds = new Set(items.flatMap((item) => [item.placeId, item.fromId, item.toId, item.rejoinPlaceId]).filter(Boolean));
   return {
     generatedAt,
     trip,
@@ -294,6 +325,6 @@ export async function publicTripPayload(payload) {
   return {
     ...payload, trip,
     places: payload.places.map((place) => ({ ...place, id: ids.get(place.id), mapsUrl: urlValue({ url: place.mapsUrl }), website: urlValue({ url: place.website }) })),
-    items: payload.items.map((item) => ({ ...item, structure: item.structure || "Item", parentId: ids.get(item.parentId) || null, id: ids.get(item.id), placeId: ids.get(item.placeId) || null, fromId: ids.get(item.fromId) || null, toId: ids.get(item.toId) || null, navigationUrl: urlValue({ url: item.navigationUrl }), reservationUrl: urlValue({ url: item.reservationUrl }) })),
+    items: payload.items.map((item) => ({ ...item, structure: item.structure || "Item", parentId: ids.get(item.parentId) || null, detourForId: ids.get(item.detourForId) || null, rejoinPlaceId: ids.get(item.rejoinPlaceId) || null, id: ids.get(item.id), placeId: ids.get(item.placeId) || null, fromId: ids.get(item.fromId) || null, toId: ids.get(item.toId) || null, navigationUrl: urlValue({ url: item.navigationUrl }), reservationUrl: urlValue({ url: item.reservationUrl }) })),
   };
 }

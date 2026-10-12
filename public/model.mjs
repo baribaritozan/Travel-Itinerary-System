@@ -36,7 +36,8 @@ export function formatDay(day) {
 }
 
 export function formatTime(value, timeZone) {
-  if (!value || !value.includes("T")) return "終日";
+  if (!value) return "時刻未定";
+  if (!value.includes("T")) return "終日";
   return new Intl.DateTimeFormat("ja-JP", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone }).format(new Date(value));
 }
 
@@ -88,19 +89,29 @@ export function compareCandidates(a, b) {
   const ranks = { Confirmed: 0, Tentative: 1, Candidate: 2, Cancelled: 3 };
   return (ranks[a.status] ?? 2) - (ranks[b.status] ?? 2) || (a.order || 0) - (b.order || 0) || compareItems(a, b);
 }
+export function compareUntimed(a, b) {
+  return (a.order || 0) - (b.order || 0) || compareCandidates({ ...a, start: null }, { ...b, start: null });
+}
 
 export function buildTree(items) {
-  const byId = new Map(items.map((item) => [item.id, { ...item, structure: structureOf(item), children: [] }]));
+  const byId = new Map(items.map((item) => [item.id, { ...item, structure: structureOf(item), children: [], detours: [] }]));
   const roots = [];
   for (const node of byId.values()) {
     const parent = byId.get(node.parentId);
-    if (parent) parent.children.push(node); else roots.push(node);
+    if (parent) parent.children.push(node);
+    else if (node.detourForId && byId.has(node.detourForId)) byId.get(node.detourForId).detours.push(node);
+    else roots.push(node);
   }
-  for (const node of byId.values()) node.children.sort(node.structure === "Alternative Group" ? compareCandidates : compareItems);
+  for (const node of byId.values()) {
+    let root = node; const seen = new Set();
+    while (root.parentId && !seen.has(root.id)) { seen.add(root.id); root = byId.get(root.parentId) || root; }
+    node.children.sort(node.structure === "Flexible Block" || root.detourForId ? compareUntimed : node.structure === "Alternative Group" ? compareCandidates : compareItems);
+    node.detours.sort(compareUntimed);
+  }
   roots.sort(compareItems);
   return { roots, byId };
 }
-export function flattenTree(roots) { return roots.flatMap((node) => [node, ...flattenTree(node.children)]); }
+export function flattenTree(roots) { return roots.flatMap((node) => [node, ...flattenTree(node.children), ...flattenTree(node.detours || [])]); }
 export function descendantItems(node) {
   return structureOf(node) === "Item" ? [node] : node.children.flatMap(descendantItems);
 }
@@ -134,12 +145,14 @@ export function onDay(node, day, timeZone) {
   return structureOf(node) === "Item" ? start === day : start <= day && day <= end;
 }
 export function filterTree(roots, filters, selectedIds, day, timeZone) {
-  function visit(node, inherited = false) {
+  function visit(node, inherited = false, timeContext = null) {
     if (!filters.showCancelled && ["Cancelled", "中止"].includes(node.status)) return null;
-    if (!onDay(node, day, timeZone)) return null;
+    if (!onDay(timeContext || node, day, timeZone)) return null;
     const match = inherited || matchesFilters(node, filters, selectedIds);
-    const children = node.children.map((child) => visit(child, match)).filter(Boolean);
-    return match || children.length ? { ...node, children } : null;
+    const context = timeContext || (node.structure === "Flexible Block" ? node : null);
+    const children = node.children.map((child) => visit(child, match, context)).filter(Boolean);
+    const detours = (node.detours || []).map((detour) => visit(detour, false, node)).filter(Boolean);
+    return match || children.length || detours.length ? { ...node, children, detours } : null;
   }
   return roots.map((node) => visit(node)).filter(Boolean);
 }
@@ -173,16 +186,64 @@ export function minuteLabel(minute) { return `${String(Math.floor(minute / 60)).
 
 // A container's own location is a fallback only when displayed descendants
 // have no geographic data. Alternative groups contribute one active branch.
-export function mapNodes(roots, activeCandidates, range, day, timeZone, places) {
-  function visit(node) {
-    if (!overlapsRange(node, range, day, timeZone)) return [];
-    if (structureOf(node) === "Item") return [node];
+export function mapNodes(roots, activeCandidates, range, day, timeZone, places, state = {}) {
+  function visit(node, timeContext = null) {
+    if (!overlapsRange(timeContext || node, range, day, timeZone)) return [];
+    const detours = (node.detours || []).filter(detour => flattenTree([detour]).some(n => state.expandedItemIds?.has(n.id) || state.focusedItemId === n.id || state.selectedIds?.has(n.id))).flatMap(n => visit(n, node));
+    if (structureOf(node) === "Item") return [node, ...detours];
     const children = node.structure === "Alternative Group" ? [node.children.find((child) => child.id === activeCandidates.get(node.id)) || node.children[0]].filter(Boolean) : node.children;
-    const result = children.flatMap(visit);
-    return result.some((item) => itemPlaces(item, places).some(hasCoordinates)) ? result : itemPlaces(node, places).some(hasCoordinates) ? [node] : result;
+    const result = children.flatMap(child => visit(child, timeContext || (node.structure === "Flexible Block" ? node : null)));
+    return [...(result.some((item) => itemPlaces(item, places).some(hasCoordinates)) ? result : itemPlaces(node, places).some(hasCoordinates) ? [node] : result), ...detours];
   }
-  return roots.flatMap(visit);
+  return roots.flatMap(node => visit(node));
 }
+
+// Use the complete public tree, never a filter projection. A Transit inside an
+// alternative stays in its own branch when finding the next scheduled stop.
+export function detourAssessment(detour, transit, tree, activeCandidates = new Map()) {
+  const branches = new Map(activeCandidates);
+  let branch = transit;
+  while (branch?.parentId) {
+    const parent = tree.byId.get(branch.parentId);
+    if (parent?.structure === "Alternative Group") branches.set(parent.id, branch.id);
+    branch = parent;
+  }
+  function scheduled(node) {
+    if (node.status === "Cancelled") return [];
+    if (node.structure === "Alternative Group") return scheduled(node.children.find(c => c.id === branches.get(node.id)) || node.children[0] || { children: [] });
+    if (node.structure === "Series") return node.children.flatMap(scheduled);
+    return node.start?.includes("T") ? [node] : [];
+  }
+  const end = Date.parse(transit.end);
+  const next = tree.roots.flatMap(scheduled).filter(n => n.id !== transit.id && Date.parse(n.start) >= end).sort(compareItems)[0];
+  if (!Number.isFinite(end) || !next) return { minutes: null, text: "次の予定がないため判定不可" };
+  const minutes = Number(((Date.parse(next.start) - end) / 60000 - detour.additionalDurationMinutes).toFixed(3));
+  return { minutes, nextId: next.id, text: minutes >= 0 ? `寄り道可能・${minutes}分余裕` : `予定超過・${Math.abs(minutes)}分` };
+}
+
+export function resolveDestination(node, places, focusedId = null, activeCandidates = new Map()) {
+  if (!node) return null;
+  if (structureOf(node) === "Alternative Group") return resolveDestination(node.children.find(c => c.id === activeCandidates.get(node.id)) || node.children[0], places, focusedId, activeCandidates);
+  if (structureOf(node) === "Series") {
+    const focused = flattenTree(node.children).find(n => n.id === focusedId);
+    return (focused && resolveDestination(focused, places, null, activeCandidates)) || node.children.map(n => resolveDestination(n, places, null, activeCandidates)).find(Boolean) || null;
+  }
+  if (structureOf(node) !== "Item") return null;
+  const place = places.get(node.type === "Transit" ? node.toId : node.placeId);
+  return place && (hasCoordinates(place) || place.address) ? { place, item: node } : null;
+}
+export function buildDirectionsUrl(location, destination) {
+  if (!hasCoordinates(location) || !destination?.place) return null;
+  const { place, item } = destination;
+  const target = hasCoordinates(place) ? `${place.latitude},${place.longitude}` : place.address;
+  if (!target) return null;
+  const url = new URL("https://www.google.com/maps/dir/");
+  url.searchParams.set("api", "1"); url.searchParams.set("origin", `${location.latitude},${location.longitude}`); url.searchParams.set("destination", target);
+  const mode = { Walk: "walking", Train: "transit", Bus: "transit", Car: "driving" }[item.transport];
+  if (mode) url.searchParams.set("travelmode", mode);
+  return url.href;
+}
+export function locationIsStale(location, now = Date.now()) { return !location || now - location.timestamp > 300000; }
 export function focusedMapIds(id, roots, activeCandidates) {
   const node = flattenTree(roots).find((node) => node.id === id);
   if (!node) return new Set();
