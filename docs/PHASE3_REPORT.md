@@ -16,12 +16,12 @@
 | 8 | detourAssessment（完全な公開treeと同じ候補枝を使用）、paintFocus再計算 | model余裕/0/超過/判定不可/同じ系列。browser「next fixed candidate changes assessment」でアクティブ次候補変更とフィルター不変。登録値の目安表示 |
 | 9 | buildTree roots除外、mapNodes明示条件 | model対象Transit展開だけでは非表示、寄り道自身の展開/focus/選択で表示。browserトップレベル3件、詳細内3構造、展開時だけ地点表示 |
 | 10 / FR-20 | requestLocationのみgetCurrentPosition、busy時重複禁止 | browser初期/カード/日付等要求0、明示操作後1、watchPositionを呼ぶと失敗するfixture |
-| 11 | 現在地専用layer、status、expiry timer | browser成功/精度/時刻/専用marker/circle、denied/timeout/unavailable/insecure/unsupported、5分超で古い表示・更新案内 |
+| 11 | 現在地専用layer、status、expiry timer、_headersの同一origin許可 | browser成功/精度/時刻/専用marker/circle、denied/timeout/unavailable/insecure/unsupported、5分超で古い表示・更新案内。追加の実Geolocation API＋権限エミュレーションで配信Permissions-Policyも検証 |
 | 12 | currentLocationメモリ変数、payload/state/storage/logと独立 | browser Storage/IndexedDB/Cache/Service Worker空、request/consoleへテスト座標なし、reloadでmarker/位置要求0。appの保存/サーバー送信経路なし |
 | 13 / FR-21 | resolveDestination/buildDirectionsUrl、明示buttonからwindow.open | model全構造、全travelmode、公開住所encoding、固定origin/許可パラメーター。browser「Directions all structures」通常/Transit/自由時間子/寄り道/Series/active group、無効理由、実popup opener=null。現在地は操作時にのみURLへ追加、第三者送信文言あり |
 | 14 | 失敗状態を旅程stateと独立、外部経路catch | browser位置取得全失敗でも選択可、「map/external failure」でLeaflet遮断/外部popup例外でも候補詳細・選択・既存地図リンク継続 |
 | 15 | 既存CSS色/余白/リング/native controls/ariaを拡張 | 390×844、1440×900、200%文字、reduced motion、44px測定、Tab/Enter/Space/矢印、横溢れなし。実際に画像を開いて確認 |
-| 16 / FR-01〜17 | 既存6テストファイルと既存browser20件を保持 | 既存52 + 追加41 = 93/93、既存20 + 追加13 = 33/33、fail0 skip0。既存testsファイルのbaselineとの差分0、既存browser期待値/テスト本体変更なし（open helperに任意initScriptを追加） |
+| 16 / FR-01〜17 | 既存6テストファイルと既存browser20件を保持 | 既存52 + 追加41 = 93件、既存20 + 追加14 = 34件。既存testsファイルのbaselineとの差分0、既存browser期待値/テスト本体変更なし（open helperに任意initScript、fixture serverへ実配信ヘッダーを適用） |
 
 Phase 1・2の既存テストはtimezone/公開境界/危険URL/キャッシュ/refresh/webhook/日付/詳細/単一focus/地図/候補/系列/複数選択/フィルター/時間範囲/モバイル/キーボードを継続検証する。対象外のWeb編集、採用案保存、経路検索API、継続追跡、PWAは追加していない。
 
@@ -52,6 +52,12 @@ Node実体 `C:\Users\wyuya\AppData\Local\Volta\tools\image\node\24.21.0\node.exe
 | 既存Wrangler実体 deployments status --json | 変更前deployment/version/100% trafficを確認 |
 | node artifacts/phase3-live.mjs schema | 許可option/4列のみ追加、既存schema/options保持・既存8行hash一致。phase3-schema.json |
 | node artifacts/phase3-live.mjs samples | 11行Publish=false、既存8行hash一致。phase3-sample-creation.json |
+| 既存Wrangler deploy --dry-run → deploy（commit 656ff3e） | 成功、phase3-deploy-dry-run.txt / phase3-deploy.txt。初回version 4a30f2a7-906f-479f-9cad-3e2e59b1d629 |
+| node artifacts/phase3-live.mjs live 656ff3eae9cf47db1e9806421f5e60a177e354bd | 実位置取得がPermissions-Policyに拒否されsmoke失敗。finallyで全11行false・API/画面/キャッシュ除去・8行hash一致。phase3-production-first-failed.json / -command.txt |
+| wrangler rollback --help → rollback 87cc8434-86d1-49d4-8f91-a81788237157 --yes --message ... | 正式help確認後、既存直前versionへ復旧成功。phase3-rollback.txt |
+| node artifacts/phase3-live.mjs audit; wrangler deployments status --json | 390/1440 smoke、公開8件、サンプル0、11行false、hash一致。phase3-rollback-smoke.json / phase3-rollback-status.json |
+| node --test --test-name-pattern='Phase 3 real Geolocation' scripts/browser-check.mjs | 実配信ヘッダー適用後、禁止設定で1/1失敗を再現。phase3-permissions-red.txt。モック成功だけでは設定を検証できないことを修正 |
+| 修正後 npm test / npm run test:browser / npm run build / 全node --check / git diff --check | 93/93、34/34、fail0 skip0、build/14構文/diff成功。phase3-unit-after-policy.txt / phase3-browser-after-policy.txt / phase3-build-after-policy.txt。実API＋許可済み固定座標でも成功 |
 
 通常のブラウザシナリオはconsole error/uncaught error 0。Leaflet/タイル/API失敗注入時のブラウザnetwork errorは明示条件だけ許容する。過去の失敗ログを削除せず原因と修正を記録した。
 
@@ -88,7 +94,7 @@ Node実体 `C:\Users\wyuya\AppData\Local\Volta\tools\image\node\24.21.0\node.exe
 
 baseline branch codex/phase3-20261012-182749、commit 65eb5e8b3e79bdf2c39de84fe87d7deb42417cd5、annotated tag phase3-baseline-20261012-182749。作成18:27:53 JST、origin branch/tag/peeled SHA一致を確認してから変更開始。詳細はPHASE3_PLAN.md。
 
-checkpoint b98f2e5（同期/モデル/追加41テスト/計画）push済み。最終実装commit・PRは本番結果とともに追記する。force-push/rebase/remote削除/既存branch履歴書換えなし。
+checkpoint b98f2e5（同期/モデル/追加41テスト/計画）push済み。初回実装commit 656ff3eae9cf47db1e9806421f5e60a177e354bdはpush/デプロイ後に下記不具合を検出しrollbackした。最終実装commit・PRは本番結果とともに追記する。force-push/rebase/remote削除/既存branch履歴書換えなし。
 
 復旧手順（実行時は日時と新規checkout名を採番）:
 
@@ -110,10 +116,14 @@ wrangler deploy
 
 更新前Worker travel-itinerary、URL https://travel-itinerary.baribaritozan.workers.dev 、deployment 7c5ad00b-005b-43a6-9f83-4f606d4b144a、version 87cc8434-86d1-49d4-8f91-a81788237157（100%）。変更前390/1440 smokeと公開8件/安定ID境界は成功。
 
-デプロイと本番smokeは未実施。Phase 3サンプルは11件全false。PR未作成。これらの証拠が揃うまでGoalは完了にしない。
+初回デプロイは19:02:54.094 JST、deployment 9040bf25-bcaa-427f-b727-d5275db5cf81、version 4a30f2a7-906f-479f-9cad-3e2e59b1d629。19:03:39〜19:04:52の実環境smokeで、既存 `Permissions-Policy: geolocation=()` が実API取得を禁止することを検出した。ローカルAPIモックだけではこの配信境界を検証できていなかった。Phase 1・2操作、自由時間、寄り道は動作したが、Phase 3完了とはしない。
+
+全11行の非公開復帰・API/画面/キャッシュ消滅・既存8行hash一致を19:04:52.445に確認後、19:06:04.620に確認済みPhase 2 versionへrollbackした（deployment a3c53bf6-12f9-49ff-b76e-f1dabfdb009b、旧version 100%）。19:06:50.952の390/1440復旧smoke成功、サンプルfalse/消滅/hash一致を再確認した。その後だけ、同一origin許可へのヘッダー最小修正と、実Geolocation＋ブラウザ権限エミュレーションの回帰テストを追加した。camera/microphone禁止は維持する。
+
+再デプロイ・最終smoke・PRは結果待ち。Phase 3サンプルは全11件false。未達のままGoalは完了にしない。
 
 ## 変更ファイル・制約
 
-scripts/notion.mjs、public/model.mjs、public/app.js、public/styles.css、tests/phase3-sync.test.mjs、tests/phase3-model.test.mjs、scripts/browser-check.mjs、README.md、docs/DEPLOYMENT.md、docs/PHASE3_PLAN.md、docs/PHASE3_REPORT.md。SPECIFICATION.md、既存6単体/統合テスト、Worker/公開更新境界、wrangler設定、依存バージョンは変更していない。artifactsの画像/ログ/実環境検証スクリプトはGit対象外。
+scripts/notion.mjs、public/model.mjs、public/app.js、public/styles.css、public/_headers、tests/phase3-sync.test.mjs、tests/phase3-model.test.mjs、scripts/browser-check.mjs、README.md、docs/DEPLOYMENT.md、docs/PHASE3_PLAN.md、docs/PHASE3_REPORT.md。SPECIFICATION.md、既存6単体/統合テスト、Worker/公開更新境界、wrangler設定、依存バージョンは変更していない。artifactsの画像/ログ/実環境検証スクリプトはGit対象外。
 
 実機iOS/Safariの追加互換検証、外部地図/CDN/第三者サービスの将来稼働保証は対象外。必須条件は固定テスト座標、Chromeのタッチ/キーボード、失敗注入で検証する。未実施の本番検証を成功扱いにしない。

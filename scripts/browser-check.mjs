@@ -26,6 +26,11 @@ const fixture = {
     { id: "cancelled", title: "中止の予定", type: "Activity", start: "2026-10-09T00:00:00Z", placeId: "station", status: "Cancelled" },
   ],
 };
+// Serve the deployed asset security headers too: API stubs alone cannot catch
+// a Permissions-Policy that prevents the real browser Geolocation API.
+const assetHeaders = Object.fromEntries((await readFile("dist/_headers", "utf8")).split(/\r?\n/).flatMap(line => {
+  const match = /^\s+([^:]+):\s*(.+)$/.exec(line); return match ? [[match[1], match[2]]] : [];
+}));
 const server = createServer(async (req, res) => {
   try {
     const path = new URL(req.url, "http://localhost").pathname;
@@ -33,7 +38,7 @@ const server = createServer(async (req, res) => {
     if (path === "/favicon.ico") { res.writeHead(204); res.end(); return; }
     if (!["/", "/index.html", "/app.js", "/model.mjs", "/styles.css"].includes(path)) { res.writeHead(404); res.end(); return; }
     const file = path === "/" ? "index.html" : path.slice(1);
-    res.writeHead(200, { "Content-Type": { ".html": "text/html", ".js": "application/javascript", ".mjs": "application/javascript", ".css": "text/css" }[extname(file)] }); res.end(await readFile(resolve("dist", file)));
+    res.writeHead(200, { ...assetHeaders, "Content-Type": { ".html": "text/html", ".js": "application/javascript", ".mjs": "application/javascript", ".css": "text/css" }[extname(file)] }); res.end(await readFile(resolve("dist", file)));
   } catch { res.writeHead(500); res.end(); }
 });
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -462,4 +467,14 @@ test("Phase 3 next fixed candidate changes assessment; filters never change the 
   await page.locator(".filter-panel > summary").click(); await page.locator('.filter-fields input[value="Transit"]').check();
   assert.equal(await page.locator('[data-detour-assessment="d-item"]').count(),0);
   await page.locator(".clear-filters").click(); assert.equal(await page.locator('[data-detour-assessment="d-item"]').innerText(),"予定超過・5分");
+});
+test("Phase 3 real Geolocation API respects deployed Permissions-Policy and explicit browser permission", async t => {
+  const { page, context } = await open(t,{payload:phase3Fixture,initScript:()=>{
+    window.__geoCalls=0;const original=navigator.geolocation.getCurrentPosition.bind(navigator.geolocation);
+    navigator.geolocation.getCurrentPosition=(...args)=>{window.__geoCalls++;return original(...args);};
+  }});
+  await context.grantPermissions(["geolocation"]);await context.setGeolocation({latitude:34.986123,longitude:135.759456,accuracy:12});
+  assert.equal(await page.evaluate(()=>__geoCalls),0);await page.locator(".location-panel > summary").click();await page.locator(".location-button").click();
+  await page.locator(".location-status").filter({hasText:"精度"}).waitFor();assert.equal(await page.evaluate(()=>__geoCalls),1);assert.equal(await page.locator(".current-location-pin").count(),1);
+  const response=await page.request.get(base);assert.match(response.headers()["permissions-policy"],/geolocation=\(self\)/);assert.match(response.headers()["permissions-policy"],/camera=\(\), microphone=\(\)/);
 });
