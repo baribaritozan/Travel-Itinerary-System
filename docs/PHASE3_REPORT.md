@@ -121,7 +121,9 @@ Node実体 `C:\Users\wyuya\AppData\Local\Volta\tools\image\node\24.21.0\node.exe
 
 baseline branch codex/phase3-20261012-182749、commit 65eb5e8b3e79bdf2c39de84fe87d7deb42417cd5、annotated tag phase3-baseline-20261012-182749。作成18:27:53 JST、origin branch/tag/peeled SHA一致を確認してから変更開始。詳細はPHASE3_PLAN.md。
 
-checkpoint b98f2e5（同期/モデル/追加41テスト/計画）、656ff3e（UI/テスト/文書）、18f1178（実配信Geolocation policy修正）、c54c5c9（候補scroll競合修正/最終全検証）を専用branchへpush済み。最終デプロイ対象は c54c5c90b7eea717b1ec9e89e37c8567ff84064b。以後の報告・証拠更新はdocsのみで、配信コードとの差分はない。force-push/rebase/remote削除/既存branch履歴書換えなし。PR URLは作成後追記する。
+checkpoint b98f2e5（同期/モデル/追加41テスト/計画）、656ff3e（UI/テスト/文書）、18f1178（実配信Geolocation policy修正）、c54c5c9（候補scroll競合修正/最終全検証）を専用branchへpush済み。最終デプロイ対象は c54c5c90b7eea717b1ec9e89e37c8567ff84064b。報告・sanitized証拠commitは 02e4a67c5037db4cdb84c74f4b873b2922ccf5e6。以後の報告・証拠更新はdocsのみで、配信コードとの差分はない。force-push/rebase/remote削除/既存branch履歴書換えなし。
+
+GitHub PR: **[#2 Phase 3 柔軟な当日運用を実装](https://github.com/baribaritozan/Travel-Itinerary-System/pull/2)**。19:32:11 JST作成、base main、head codex/phase3-20261012-182749、open、非draft、未merge。本chatへPRをattach済み。作成直前にorigin/mainをfetchし、mainの追加commitなし・merge-treeの競合なしを確認した。作業開始前からローカルにcommitされていた正式仕様v0.4とdocs/PHASE3_GOAL_PROMPT.mdも、origin/mainとの差分に含まれる。本タスクでの仕様変更はbaseline比較で0。このPRリンク追記後のdocs commitも同じbranchへpushし、origin SHAとローカルHEADの一致を最終確認する。
 
 復旧手順（実行時は日時と新規checkout名を採番）:
 
