@@ -26,6 +26,11 @@ const fixture = {
     { id: "cancelled", title: "中止の予定", type: "Activity", start: "2026-10-09T00:00:00Z", placeId: "station", status: "Cancelled" },
   ],
 };
+// Serve the deployed asset security headers too: API stubs alone cannot catch
+// a Permissions-Policy that prevents the real browser Geolocation API.
+const assetHeaders = Object.fromEntries((await readFile("dist/_headers", "utf8")).split(/\r?\n/).flatMap(line => {
+  const match = /^\s+([^:]+):\s*(.+)$/.exec(line); return match ? [[match[1], match[2]]] : [];
+}));
 const server = createServer(async (req, res) => {
   try {
     const path = new URL(req.url, "http://localhost").pathname;
@@ -33,7 +38,7 @@ const server = createServer(async (req, res) => {
     if (path === "/favicon.ico") { res.writeHead(204); res.end(); return; }
     if (!["/", "/index.html", "/app.js", "/model.mjs", "/styles.css"].includes(path)) { res.writeHead(404); res.end(); return; }
     const file = path === "/" ? "index.html" : path.slice(1);
-    res.writeHead(200, { "Content-Type": { ".html": "text/html", ".js": "application/javascript", ".mjs": "application/javascript", ".css": "text/css" }[extname(file)] }); res.end(await readFile(resolve("dist", file)));
+    res.writeHead(200, { ...assetHeaders, "Content-Type": { ".html": "text/html", ".js": "application/javascript", ".mjs": "application/javascript", ".css": "text/css" }[extname(file)] }); res.end(await readFile(resolve("dist", file)));
   } catch { res.writeHead(500); res.end(); }
 });
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -62,6 +67,7 @@ async function open(t, options = {}) {
     const unexpected = consoles.filter((message) => !(options.noMap || options.noTiles || options.apiFailure) || !/Failed to load resource/.test(message));
     assert.deepEqual(unexpected, [], "no unexpected console errors"); await context.close();
   });
+  if (options.initScript) await context.addInitScript(options.initScript);
   await page.clock.install({ time: new Date("2026-10-08T15:30:00Z") }); await page.goto(base); await page.locator(".item").first().waitFor();
   if (!options.noMap) await page.locator(".place-pin").first().waitFor();
   return { page, context };
@@ -139,9 +145,11 @@ test("manual map zoom survives focus and automatic focus runs after scroll settl
   await page.locator(".show-all").click(); assert.equal(await page.evaluate(() => __mapCalls.fit), fit + 1);
   await card(page, "arrival").locator(".details-toggle").click(); await page.clock.runFor(300);
   const panBefore = await page.evaluate(() => __mapCalls.pan);
-  await page.locator(".timeline-panel").evaluate((el) => { el.scrollTop = 350; }); await page.clock.runFor(50);
+  // Native scroll events arrive on a renderer frame, outside the fake timer queue.
+  // Observe each event before advancing the debounce clock; keep all timing assertions.
+  await page.locator(".timeline-panel").evaluate(async (el) => { const scrolled = new Promise(resolve => el.addEventListener("scroll", resolve, { once: true })); el.scrollTop = 350; await scrolled; }); await page.clock.runFor(50);
   assert.equal(await page.evaluate(() => __mapCalls.pan), panBefore, "no map animation while scrolling");
-  await page.locator(".timeline-panel").evaluate((el) => { el.scrollTop = 370; }); await page.clock.runFor(300);
+  await page.locator(".timeline-panel").evaluate(async (el) => { const scrolled = new Promise(resolve => el.addEventListener("scroll", resolve, { once: true })); el.scrollTop = 370; await scrolled; }); await page.clock.runFor(300);
   const expected = await page.evaluate(() => {
     const spot = document.querySelector(".timeline-panel").getBoundingClientRect().height / 2;
     return [...document.querySelectorAll(".item")].map((el) => { const r = el.getBoundingClientRect(); return { id: el.dataset.id, d: spot < r.top ? r.top - spot : spot > r.bottom ? spot - r.bottom : 0 }; }).sort((a, b) => a.d - b.d)[0].id;
@@ -330,4 +338,153 @@ test("Phase 2 accessible mobile 200% text/reduced motion, filters and time panel
   await page.locator(".filter-panel > summary").click(); await page.locator(".time-panel > summary").click(); await revealSeries(page);
   await own(page, "child-a", ".card-focus").scrollIntoViewIfNeeded(); await checkPhase2Targets(page); await page.screenshot({ path: "artifacts/phase2-mobile-text-200-series.png" });
   assert.equal(await page.evaluate(() => __mapCalls.options.filter((call) => call.options?.animate === true).length), 0);
+});
+
+const phase3Fixture = {
+  ...fixture,
+  items: [
+    { id: "free", title: "午後の自由時間", structure: "Flexible Block", start: "2026-10-09T04:00:00Z", end: "2026-10-09T06:00:00Z", type: "Activity" },
+    { id: "free-a", parentId: "free", title: "寺の散策候補", placeId: "temple", durationMinutes: 30, openingHours: "09:00–17:00", type: "Sightseeing", status: "Candidate", order: 1, reservationStatus: "Not Required", perPersonCost: 500, currency: "JPY" },
+    { id: "free-b", parentId: "free", title: "駅の買い物候補", placeId: "station", durationMinutes: 20, type: "Activity", status: "Confirmed", order: 0 },
+    { id: "p3-transit", title: "寄り道対象の移動", type: "Transit", transport: "Bus", fromId: "station", toId: "temple", start: "2026-10-09T01:00:00Z", end: "2026-10-09T02:00:00Z" },
+    { id: "p3-next", title: "次の固定予定", type: "Meeting", placeId: "temple", start: "2026-10-09T02:30:00Z", end: "2026-10-09T03:00:00Z" },
+    { id: "d-item", title: "単独の寄り道", detourForId: "p3-transit", additionalDurationMinutes: 10, durationMinutes: 10, placeId: "hotel", type: "Activity", transport: "Walk" },
+    { id: "d-series", title: "系列の寄り道", detourForId: "p3-transit", additionalDurationMinutes: 40, structure: "Series", rejoinPlaceId: "station" },
+    { id: "d-child", title: "寄り道の子", parentId: "d-series", placeId: "hotel", durationMinutes: 15, transport: "Car" },
+    { id: "d-group", title: "比較する寄り道", detourForId: "p3-transit", additionalDurationMinutes: 30, structure: "Alternative Group" },
+    { id: "d-a", title: "寄り道案A", parentId: "d-group", placeId: "hotel", durationMinutes: 10, status: "Confirmed" },
+    { id: "d-b", title: "寄り道案B", parentId: "d-group", placeId: "station", durationMinutes: 20, status: "Candidate" },
+  ],
+};
+const geoSuccess = () => {
+  window.__geoCalls = 0;
+  Object.defineProperty(navigator, "geolocation", { configurable: true, value: { getCurrentPosition(success) { window.__geoCalls++; success({ coords: { latitude: 34.986123, longitude: 135.759456, accuracy: 12 }, timestamp: Date.now() }); }, watchPosition() { throw new Error("watchPosition forbidden"); } } });
+};
+test("Phase 3 Flexible Block checklist: order/facts/focus/selection/filters/parent map time and touch", async t => {
+  const { page } = await open(t, { payload: phase3Fixture, initScript: geoSuccess });
+  assert.equal(await page.evaluate(() => __geoCalls), 0);
+  assert.deepEqual(await page.locator('.flexible-candidates > .item').evaluateAll(els => els.map(e => e.dataset.id)), ["free-b", "free-a"]);
+  assert.equal(await page.locator('.flexible-candidates .timeline-node').count(), 0);
+  assert.match(await own(page, "free-a", ".card-focus").innerText(), /時刻未定.*30分/s);
+  await own(page, "free-a", ".details-toggle").tap(); assert.match(await card(page, "free-a").innerText(), /09:00–17:00/);
+  await own(page, "free", ".card-focus").tap(); assert.equal(await page.locator(".focused-pin").count(), 2);
+  await own(page, "free-a", ".card-focus").tap(); assert.equal(await page.locator(".focused-pin").count(), 1);
+  await own(page, "free-a", ".select-toggle").tap(); assert.equal(await checkState(page, "free"), "mixed");
+  await own(page, "free", ".select-toggle").tap(); assert.equal(await checkState(page, "free"), "true");
+  await page.locator(".time-panel > summary").click(); await page.locator(".time-start").fill("780"); await page.locator(".time-end").fill("795");
+  assert.equal(await page.locator(".place-pin").count(), 2); assert.equal(await selected(page), "free-a");
+  await page.locator(".time-end").fill("915"); await page.locator(".time-start").fill("900"); assert.equal(await page.locator(".place-pin").count(), 0);
+  await page.locator(".time-reset").click(); await page.locator(".filter-panel > summary").click(); await page.locator('.filter-fields input[value="Sightseeing"]').check();
+  assert.equal(await card(page, "free-b").count(), 0); assert.equal(await card(page, "free-a").count(), 1);
+  await noOverflow(page);
+});
+test("Phase 3 detours: three route structures in Transit details, slack and explicit-only map visibility", async t => {
+  const { page } = await open(t, { payload: phase3Fixture });
+  assert.equal(await page.locator(".items > .item").count(), 3); assert.equal(await page.locator('.place-pin[title*="宿"]').count(), 0);
+  await own(page, "p3-transit", ".details-toggle").click(); assert.equal(await page.locator(".detour-routes > .item").count(), 3);
+  assert.equal(await page.locator('.place-pin[title*="宿"]').count(), 0);
+  assert.match(await card(page, "d-item").innerText(), /追加所要時間：10分.*寄り道可能・20分余裕/s);
+  assert.match(await card(page, "d-series").innerText(), /予定超過・10分/); assert.match(await card(page, "d-group").innerText(), /寄り道可能・0分余裕/);
+  await own(page, "d-item", ".details-toggle").click(); assert.equal(await page.locator('.place-pin[title*="宿"]').count(), 1);
+  await own(page, "d-item", ".details-toggle").click(); assert.equal(await page.locator('.place-pin[title*="宿"]').count(), 0);
+  await own(page, "d-series", ".details-toggle").click(); await own(page, "d-child", ".card-focus").click(); assert.equal(await selected(page), "d-child");
+  await own(page, "d-group", ".card-focus").click(); await page.getByRole("button", { name: "比較する寄り道の次の候補", exact: true }).click(); await page.clock.runFor(400);
+  assert.equal(await page.locator('[data-activate="d-b"]').getAttribute("aria-pressed"), "true"); await noOverflow(page);
+});
+test("Phase 3 location privacy: no automatic request, one-shot success/precision/stale/reload and Directions popup contract", async t => {
+  const { page, context } = await open(t, { payload: phase3Fixture, initScript: geoSuccess });
+  const requests = [], messages = []; page.on("request", r => requests.push(r.url() + (r.postData() || ""))); page.on("console", m => messages.push(m.text()));
+  await own(page, "p3-transit", ".card-focus").click(); await own(page, "p3-transit", ".details-toggle").click();
+  assert.equal(await page.evaluate(() => __geoCalls), 0);
+  await page.locator(".location-panel > summary").click(); await page.locator(".location-button").click(); assert.equal(await page.evaluate(() => __geoCalls), 1);
+  assert.equal(await page.locator(".current-location-pin").count(), 1); assert.equal(await page.locator(".current-location-accuracy").count(), 1);
+  assert.match(await page.locator(".location-status").innerText(), /精度.*12m/);
+  assert.match(await own(page, "p3-transit", ".item-details").innerText(), /第三者.*現在地と目的地/s);
+  let opened;
+  await page.exposeFunction("captureDirections", (args) => { opened = args; });
+  await page.evaluate(() => { window.open = (...args) => { window.captureDirections(args); return null; }; });
+  await card(page, "p3-transit").locator(':scope > .item-details > .directions-section .directions-button').click();
+  await page.waitForFunction(() => true); assert.ok(opened); const url = new URL(opened[0]);
+  assert.equal(url.origin, "https://www.google.com"); assert.equal(url.pathname, "/maps/dir/"); assert.equal(url.searchParams.get("origin"), "34.986123,135.759456"); assert.equal(url.searchParams.get("destination"), "34.9949,135.785"); assert.equal(url.searchParams.get("travelmode"), "transit"); assert.match(opened[2], /noopener/);
+  assert.ok(!requests.some(x => /34\.986123|135\.759456/.test(x))); assert.ok(!messages.some(x => /34\.986123|135\.759456/.test(x)));
+  assert.deepEqual(await page.evaluate(async () => ({ local: { ...localStorage }, session: { ...sessionStorage }, db: await indexedDB.databases(), cache: await caches.keys(), workers: (await navigator.serviceWorker.getRegistrations()).length })), { local: {}, session: {}, db: [], cache: [], workers: 0 });
+  await page.clock.runFor(300001); assert.match(await page.locator(".location-status").innerText(), /古い.*更新/s);
+  assert.equal(await card(page, "p3-transit").locator(':scope > .item-details > .directions-section .directions-button').isDisabled(), true);
+  await page.reload(); await page.locator(".item").first().waitFor(); assert.equal(await page.evaluate(() => __geoCalls), 0); assert.equal(await page.locator(".current-location-pin").count(), 0);
+});
+for (const [name, code, expected] of [["denied", 1, "許可されていません"], ["timeout", 3, "タイムアウト"], ["unavailable", 2, "取得できません"], ["unsupported", 0, "対応していません"], ["insecure", -1, "HTTPS"]]) test(`Phase 3 location ${name} keeps itinerary controls usable`, async t => {
+  const { page } = await open(t, { payload: phase3Fixture, initScript: `window.__geoCalls=0; ${code === -1 ? 'Object.defineProperty(window,"isSecureContext",{value:false});' : ''} Object.defineProperty(navigator,"geolocation",{configurable:true,value:${code === 0 ? 'undefined' : `{getCurrentPosition(ok,fail){window.__geoCalls++;fail({code:${code}})}}`}});` });
+  await page.locator(".location-panel > summary").click(); await page.locator(".location-button").click(); assert.match(await page.locator(".location-status").innerText(), new RegExp(expected));
+  assert.equal(await page.evaluate(() => __geoCalls), code <= 0 ? 0 : 1); await own(page, "free", ".select-toggle").click(); assert.equal(await checkState(page, "free"), "true"); await noOverflow(page);
+  if(name === "denied") { await page.locator(".location-panel").scrollIntoViewIfNeeded(); await page.screenshot({path:"artifacts/phase3-location-error.png"}); }
+});
+for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) test(`Phase 3 visual/keyboard ${viewport.width}: free, detour, location, 200% text and reduced motion`, async t => {
+  const { page } = await open(t, { payload: phase3Fixture, desktop: viewport.width === 1440, initScript: geoSuccess });
+  await page.locator(".location-panel > summary").focus(); await page.keyboard.press("Enter"); await page.keyboard.press("Tab"); await page.keyboard.press("Space");
+  assert.equal(await page.evaluate(() => __geoCalls), 1);
+  await own(page, "free-a", ".details-toggle").focus(); await page.keyboard.press("Enter"); await checkPhase2Targets(page);
+  await own(page, "free", ".card-focus").scrollIntoViewIfNeeded(); await page.screenshot({ path: `artifacts/phase3-free-${viewport.width}.png` });
+  await own(page, "free-a", ".card-focus").scrollIntoViewIfNeeded(); await page.screenshot({ path: `artifacts/phase3-candidate-${viewport.width}.png` });
+  await own(page, "p3-transit", ".details-toggle").click(); await own(page, "d-series", ".details-toggle").click(); await own(page, "d-child", ".card-focus").focus(); await page.keyboard.press("Enter");
+  await checkPhase2Targets(page); await page.screenshot({ path: `artifacts/phase3-detour-${viewport.width}.png` });
+  await page.addStyleTag({ content: "html { font-size: 200%; }" }); await own(page, "d-child", ".card-focus").scrollIntoViewIfNeeded(); await checkPhase2Targets(page); await page.screenshot({ path: `artifacts/phase3-text-200-${viewport.width}.png` });
+  await page.locator(".location-panel").scrollIntoViewIfNeeded(); await page.screenshot({ path: `artifacts/phase3-location-${viewport.width}.png` });
+});
+test("Phase 3 Directions all structures use resolved destination, real noopener popup and disabled reasons", async t => {
+  const { page, context } = await open(t, { payload: phase3Fixture, initScript: geoSuccess });
+  await page.locator(".location-panel > summary").click(); await page.locator(".location-button").click();
+  await own(page, "p3-transit", ".details-toggle").click(); await own(page, "d-series", ".details-toggle").click();
+  const captured = [];
+  await page.exposeFunction("captureAllDirections", args => captured.push(args));
+  await page.evaluate(() => { window.__realOpen = window.open; window.open = (...args) => { window.captureAllDirections(args); return null; }; });
+  for(const [id, destination, mode] of [["free-a","34.9949,135.785",null],["p3-next","34.9949,135.785",null],["p3-transit","34.9949,135.785","transit"],["d-item","35.011,135.768","walking"],["d-series","35.011,135.768","driving"],["d-group","35.011,135.768",null]]) {
+    if(await own(page,id,".details-toggle").getAttribute("aria-expanded") !== "true") await own(page,id,".details-toggle").click();
+    await card(page,id).locator(':scope > .item-details > .directions-section .directions-button').click();
+    await page.waitForTimeout(10); const args = captured.at(-1), url = new URL(args[0]); assert.equal(url.searchParams.get("destination"),destination); assert.equal(url.searchParams.get("travelmode"),mode); assert.match(args[2],/noopener/);
+  }
+  await own(page,"free",".details-toggle").click(); assert.equal(await card(page,"free").locator(':scope > .item-details > .directions-section .directions-button').isDisabled(),true);
+  assert.match(await own(page,"free",".item-details").innerText(),/目的地を解決できません/);
+  await page.evaluate(() => { window.open = window.__realOpen; });
+  const popupPromise = context.waitForEvent("page"); await card(page,"d-item").locator(':scope > .item-details > .directions-section .directions-button').click();
+  const popup = await popupPromise; await popup.waitForLoadState(); assert.equal(await popup.evaluate(()=>window.opener),null); assert.equal(new URL(popup.url()).origin,"https://www.google.com"); await popup.close();
+});
+test("Phase 3 map/external failure preserves location-free itinerary and error screenshot", async t => {
+  const { page } = await open(t, { payload: phase3Fixture, noMap:true, initScript:geoSuccess });
+  await page.locator(".location-panel > summary").click(); await page.locator(".location-button").click();
+  await own(page,"free-a",".details-toggle").click(); await own(page,"free-a",".select-toggle").click(); assert.equal(await checkState(page,"free"),"mixed");
+  await page.evaluate(()=>{window.open=()=>{throw new Error("injected popup failure");};});
+  await card(page,"free-a").locator(':scope > .item-details > .directions-section .directions-button').click();
+  assert.match(await own(page,"free-a",".item-details").innerText(),/外部経路を開けません/);
+  assert.match(await page.locator(".map-status").innerText(),/地図ライブラリ/); await noOverflow(page);
+  await page.screenshot({path:"artifacts/phase3-external-map-error.png"});
+});
+test("Phase 3 next fixed candidate changes assessment; filters never change the public schedule", async t => {
+  const payload = structuredClone(phase3Fixture);
+  const next = payload.items.find(n=>n.id==="p3-next"); next.parentId="next-group"; next.status="Confirmed";
+  payload.items.push({id:"next-group",title:"次の予定の比較",structure:"Alternative Group",start:"2026-10-09T02:05:00Z",end:"2026-10-09T03:00:00Z"},{...next,id:"next-other",title:"早い次予定",status:"Candidate",start:"2026-10-09T02:05:00Z"});
+  const { page } = await open(t,{payload}); await own(page,"p3-transit",".details-toggle").click();
+  assert.equal(await page.locator('[data-detour-assessment="d-item"]').innerText(),"寄り道可能・20分余裕");
+  await page.getByRole("button",{name:"次の予定の比較の次の候補",exact:true}).click(); await page.clock.runFor(400);
+  assert.equal(await page.locator('[data-detour-assessment="d-item"]').innerText(),"予定超過・5分");
+  await page.locator(".filter-panel > summary").click(); await page.locator('.filter-fields input[value="Transit"]').check();
+  assert.equal(await page.locator('[data-detour-assessment="d-item"]').count(),0);
+  await page.locator(".clear-filters").click(); assert.equal(await page.locator('[data-detour-assessment="d-item"]').innerText(),"予定超過・5分");
+});
+test("Phase 3 real Geolocation API respects deployed Permissions-Policy and explicit browser permission", async t => {
+  const { page, context } = await open(t,{payload:phase3Fixture,initScript:()=>{
+    window.__geoCalls=0;const original=navigator.geolocation.getCurrentPosition.bind(navigator.geolocation);
+    navigator.geolocation.getCurrentPosition=(...args)=>{window.__geoCalls++;return original(...args);};
+  }});
+  await context.grantPermissions(["geolocation"]);await context.setGeolocation({latitude:34.986123,longitude:135.759456,accuracy:12});
+  assert.equal(await page.evaluate(()=>__geoCalls),0);await page.locator(".location-panel > summary").click();await page.locator(".location-button").click();
+  await page.locator(".location-status").filter({hasText:"精度"}).waitFor();assert.equal(await page.evaluate(()=>__geoCalls),1);assert.equal(await page.locator(".current-location-pin").count(),1);
+  const response=await page.request.get(base);assert.match(response.headers()["permissions-policy"],/geolocation=\(self\)/);assert.match(response.headers()["permissions-policy"],/camera=\(\), microphone=\(\)/);
+});
+test("Phase 3 pending candidate scroll callback is harmless after filters remove its carousel", async t => {
+  const { page } = await open(t,{payload:phase3Fixture,noMap:true});
+  await own(page,"p3-transit",".details-toggle").click();await page.getByRole("button",{name:"比較する寄り道の次の候補",exact:true}).click();await page.clock.runFor(400);
+  assert.equal(await page.locator('[data-activate="d-b"]').getAttribute("aria-pressed"),"true");
+  await page.locator('.group-candidates[data-group="d-group"]').evaluate(el=>el.dispatchEvent(new Event("scroll")));
+  await page.locator(".filter-panel > summary").click();await page.locator('.filter-fields input[data-filter="type"][value="Transit"]').check();await page.clock.runFor(400);
+  await page.locator(".clear-filters").click();assert.equal(await card(page,"d-group").count(),1);await noOverflow(page);
 });

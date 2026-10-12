@@ -1,0 +1,792 @@
+{
+  "formatVersion": 1,
+  "purpose": "Sanitized Phase 3 verification evidence; no Notion internal IDs or secrets; fixed emulated location only.",
+  "baseline": {
+    "items": 8,
+    "places": 2,
+    "schema": [
+      {
+        "name": "Per Person Cost",
+        "type": "number"
+      },
+      {
+        "name": "Status",
+        "type": "select",
+        "options": [
+          "Candidate",
+          "Booked",
+          "Confirmed",
+          "Cancelled"
+        ]
+      },
+      {
+        "name": "Navigation URL",
+        "type": "url"
+      },
+      {
+        "name": "Publish",
+        "type": "checkbox"
+      },
+      {
+        "name": "Total Cost",
+        "type": "number"
+      },
+      {
+        "name": "From",
+        "type": "relation",
+        "direction": "single_property",
+        "self": false
+      },
+      {
+        "name": "Last edited",
+        "type": "last_edited_time"
+      },
+      {
+        "name": "Transport",
+        "type": "select",
+        "options": [
+          "Walk",
+          "Train",
+          "Bus",
+          "Car",
+          "Flight",
+          "Other"
+        ]
+      },
+      {
+        "name": "Type",
+        "type": "select",
+        "options": [
+          "Activity",
+          "Transit",
+          "Meal",
+          "Stay",
+          "Note"
+        ]
+      },
+      {
+        "name": "To",
+        "type": "relation",
+        "direction": "single_property",
+        "self": false
+      },
+      {
+        "name": "Reservation URL",
+        "type": "url"
+      },
+      {
+        "name": "Order",
+        "type": "number"
+      },
+      {
+        "name": "Place",
+        "type": "relation",
+        "direction": "single_property",
+        "self": false
+      },
+      {
+        "name": "Period",
+        "type": "date"
+      },
+      {
+        "name": "Parent",
+        "type": "relation",
+        "direction": "single_property",
+        "self": true
+      },
+      {
+        "name": "Currency",
+        "type": "select",
+        "options": [
+          "USD",
+          "JPY"
+        ]
+      },
+      {
+        "name": "Trip",
+        "type": "relation",
+        "direction": "single_property",
+        "self": false
+      },
+      {
+        "name": "Reservation Status",
+        "type": "status"
+      },
+      {
+        "name": "Structure",
+        "type": "select",
+        "options": [
+          "Item",
+          "Alternative Group",
+          "Series"
+        ]
+      },
+      {
+        "name": "Duration Minutes",
+        "type": "number"
+      },
+      {
+        "name": "Public Notes",
+        "type": "rich_text"
+      },
+      {
+        "name": "Item",
+        "type": "title"
+      }
+    ],
+    "existingPublicHashes": [
+      {
+        "name": "[Phase2 Sample] 移動の子項目",
+        "hash": "abe728eb25d6a619017e3a2b1a477e757c6861722508f90c5aee6ebfccde2bfd"
+      },
+      {
+        "name": "[Phase2 Sample] 午前の比較",
+        "hash": "4bb83742c8139b34acc1eb7dbec2a96a13a9d0aa79724121457018ac2e865e6b"
+      },
+      {
+        "name": "[Phase2 Sample] 寺と移動の系列",
+        "hash": "6730bb420f0979c626569862ff4e655b20fc92835da92f5d4141aa9b1aa52f0b"
+      },
+      {
+        "name": "[Phase2 Sample] 寺の子項目",
+        "hash": "e5769cb5df70268f4d0c9f64e95e19ecca2f86b7e489cb09e86cdbad55b5f472"
+      },
+      {
+        "name": "[Phase2 Sample] 単独候補",
+        "hash": "b4623701f9fa8e7c879d5b4fbce239b04552270432aec669d8fab54293616aae"
+      },
+      {
+        "name": "京都駅集合",
+        "hash": "8ec2d5a71fe66ceebf542a106555b136572de8fc365313f0f248a6a82b984013"
+      },
+      {
+        "name": "清水寺",
+        "hash": "8a351cd0ea4f8c66ede7aff192640d769fe922eac3006a07c9baef9d5018a991"
+      },
+      {
+        "name": "清水寺へ移動",
+        "hash": "4a0bd580aa7e9d99f6962259406551f6f5dfbba23bfc658b91d0208f171277e1"
+      }
+    ],
+    "phase2SamplesUnchanged": [
+      {
+        "name": "[Phase2 Sample] 寺の子項目",
+        "publish": true
+      },
+      {
+        "name": "[Phase2 Sample] 移動の子項目",
+        "publish": true
+      },
+      {
+        "name": "[Phase2 Sample] 単独候補",
+        "publish": true
+      },
+      {
+        "name": "[Phase2 Sample] 寺と移動の系列",
+        "publish": true
+      },
+      {
+        "name": "[Phase2 Sample] 午前の比較",
+        "publish": true
+      }
+    ]
+  },
+  "notion": {
+    "schemaChange": {
+      "at": "2026-10-12T09:51:27.988Z",
+      "added": [
+        "Structure: Flexible Block",
+        "Opening Hours",
+        "Detour For",
+        "Additional Duration Minutes",
+        "Rejoin Place"
+      ],
+      "typesAndDirectionsVerified": true,
+      "existingSchemaPreserved": true,
+      "existingValuesUnchanged": true
+    },
+    "samplesCreatedUnpublished": [
+      {
+        "name": "[Phase3 Sample] 自由時間",
+        "createdAt": "2026-10-12T09:53:19.706Z",
+        "publish": false
+      },
+      {
+        "name": "[Phase3 Sample] 寺の候補",
+        "createdAt": "2026-10-12T09:53:20.063Z",
+        "publish": false
+      },
+      {
+        "name": "[Phase3 Sample] 駅の候補",
+        "createdAt": "2026-10-12T09:53:20.428Z",
+        "publish": false
+      },
+      {
+        "name": "[Phase3 Sample] 移動",
+        "createdAt": "2026-10-12T09:53:20.764Z",
+        "publish": false
+      },
+      {
+        "name": "[Phase3 Sample] 次の固定予定",
+        "createdAt": "2026-10-12T09:53:21.090Z",
+        "publish": false
+      },
+      {
+        "name": "[Phase3 Sample] 単独寄り道",
+        "createdAt": "2026-10-12T09:53:21.437Z",
+        "publish": false
+      },
+      {
+        "name": "[Phase3 Sample] 系列寄り道",
+        "createdAt": "2026-10-12T09:53:21.785Z",
+        "publish": false
+      },
+      {
+        "name": "[Phase3 Sample] 系列の子",
+        "createdAt": "2026-10-12T09:53:22.158Z",
+        "publish": false
+      },
+      {
+        "name": "[Phase3 Sample] 比較寄り道",
+        "createdAt": "2026-10-12T09:53:22.509Z",
+        "publish": false
+      },
+      {
+        "name": "[Phase3 Sample] 比較案A",
+        "createdAt": "2026-10-12T09:53:22.873Z",
+        "publish": false
+      },
+      {
+        "name": "[Phase3 Sample] 比較案B",
+        "createdAt": "2026-10-12T09:53:23.206Z",
+        "publish": false
+      }
+    ],
+    "publicationRuns": [
+      {
+        "at": "2026-10-12T10:03:39.770Z",
+        "commit": "656ff3eae9cf47db1e9806421f5e60a177e354bd",
+        "changes": [
+          {
+            "name": "[Phase3 Sample] 比較案B",
+            "publish": true,
+            "at": "2026-10-12T10:03:41.346Z"
+          },
+          {
+            "name": "[Phase3 Sample] 比較案A",
+            "publish": true,
+            "at": "2026-10-12T10:03:41.657Z"
+          },
+          {
+            "name": "[Phase3 Sample] 比較寄り道",
+            "publish": true,
+            "at": "2026-10-12T10:03:41.987Z"
+          },
+          {
+            "name": "[Phase3 Sample] 系列の子",
+            "publish": true,
+            "at": "2026-10-12T10:03:42.308Z"
+          },
+          {
+            "name": "[Phase3 Sample] 系列寄り道",
+            "publish": true,
+            "at": "2026-10-12T10:03:42.633Z"
+          },
+          {
+            "name": "[Phase3 Sample] 単独寄り道",
+            "publish": true,
+            "at": "2026-10-12T10:03:44.540Z"
+          },
+          {
+            "name": "[Phase3 Sample] 次の固定予定",
+            "publish": true,
+            "at": "2026-10-12T10:03:44.839Z"
+          },
+          {
+            "name": "[Phase3 Sample] 移動",
+            "publish": true,
+            "at": "2026-10-12T10:03:46.205Z"
+          },
+          {
+            "name": "[Phase3 Sample] 駅の候補",
+            "publish": true,
+            "at": "2026-10-12T10:03:46.569Z"
+          },
+          {
+            "name": "[Phase3 Sample] 寺の候補",
+            "publish": true,
+            "at": "2026-10-12T10:03:46.860Z"
+          },
+          {
+            "name": "[Phase3 Sample] 自由時間",
+            "publish": true,
+            "at": "2026-10-12T10:03:47.175Z"
+          },
+          {
+            "name": "[Phase3 Sample] 自由時間",
+            "publish": false,
+            "at": "2026-10-12T10:04:03.510Z"
+          },
+          {
+            "name": "[Phase3 Sample] 寺の候補",
+            "publish": false,
+            "at": "2026-10-12T10:04:03.844Z"
+          },
+          {
+            "name": "[Phase3 Sample] 駅の候補",
+            "publish": false,
+            "at": "2026-10-12T10:04:04.204Z"
+          },
+          {
+            "name": "[Phase3 Sample] 移動",
+            "publish": false,
+            "at": "2026-10-12T10:04:04.536Z"
+          },
+          {
+            "name": "[Phase3 Sample] 次の固定予定",
+            "publish": false,
+            "at": "2026-10-12T10:04:04.903Z"
+          },
+          {
+            "name": "[Phase3 Sample] 単独寄り道",
+            "publish": false,
+            "at": "2026-10-12T10:04:05.250Z"
+          },
+          {
+            "name": "[Phase3 Sample] 系列寄り道",
+            "publish": false,
+            "at": "2026-10-12T10:04:05.569Z"
+          },
+          {
+            "name": "[Phase3 Sample] 系列の子",
+            "publish": false,
+            "at": "2026-10-12T10:04:07.304Z"
+          },
+          {
+            "name": "[Phase3 Sample] 比較寄り道",
+            "publish": false,
+            "at": "2026-10-12T10:04:07.648Z"
+          },
+          {
+            "name": "[Phase3 Sample] 比較案A",
+            "publish": false,
+            "at": "2026-10-12T10:04:08.124Z"
+          },
+          {
+            "name": "[Phase3 Sample] 比較案B",
+            "publish": false,
+            "at": "2026-10-12T10:04:08.488Z"
+          }
+        ],
+        "scenarios": [],
+        "cleanup": {
+          "at": "2026-10-12T10:04:52.445Z",
+          "all11PublishFalse": true,
+          "apiItems": 8,
+          "sampleApiItems": 0,
+          "sampleScreenItems": 0,
+          "cacheClean": true,
+          "existing8HashesMatch": true
+        },
+        "failure": "locator.waitFor: Timeout 12000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.location-status').filter({ hasText: '精度' }) to be visible\u001b[22m\n"
+      },
+      {
+        "at": "2026-10-12T10:11:49.856Z",
+        "commit": "18f11785e8821e29abcc2f62c608e54908bee7f0",
+        "changes": [
+          {
+            "name": "[Phase3 Sample] 比較案B",
+            "publish": true,
+            "at": "2026-10-12T10:11:50.883Z"
+          },
+          {
+            "name": "[Phase3 Sample] 比較案A",
+            "publish": true,
+            "at": "2026-10-12T10:11:51.207Z"
+          },
+          {
+            "name": "[Phase3 Sample] 比較寄り道",
+            "publish": true,
+            "at": "2026-10-12T10:11:51.564Z"
+          },
+          {
+            "name": "[Phase3 Sample] 系列の子",
+            "publish": true,
+            "at": "2026-10-12T10:11:51.887Z"
+          },
+          {
+            "name": "[Phase3 Sample] 系列寄り道",
+            "publish": true,
+            "at": "2026-10-12T10:11:52.235Z"
+          },
+          {
+            "name": "[Phase3 Sample] 単独寄り道",
+            "publish": true,
+            "at": "2026-10-12T10:11:52.557Z"
+          },
+          {
+            "name": "[Phase3 Sample] 次の固定予定",
+            "publish": true,
+            "at": "2026-10-12T10:11:52.886Z"
+          },
+          {
+            "name": "[Phase3 Sample] 移動",
+            "publish": true,
+            "at": "2026-10-12T10:11:53.183Z"
+          },
+          {
+            "name": "[Phase3 Sample] 駅の候補",
+            "publish": true,
+            "at": "2026-10-12T10:11:53.498Z"
+          },
+          {
+            "name": "[Phase3 Sample] 寺の候補",
+            "publish": true,
+            "at": "2026-10-12T10:11:53.820Z"
+          },
+          {
+            "name": "[Phase3 Sample] 自由時間",
+            "publish": true,
+            "at": "2026-10-12T10:11:54.165Z"
+          },
+          {
+            "name": "[Phase3 Sample] 自由時間",
+            "publish": false,
+            "at": "2026-10-12T10:12:07.327Z"
+          },
+          {
+            "name": "[Phase3 Sample] 寺の候補",
+            "publish": false,
+            "at": "2026-10-12T10:12:07.663Z"
+          },
+          {
+            "name": "[Phase3 Sample] 駅の候補",
+            "publish": false,
+            "at": "2026-10-12T10:12:08.012Z"
+          },
+          {
+            "name": "[Phase3 Sample] 移動",
+            "publish": false,
+            "at": "2026-10-12T10:12:08.324Z"
+          },
+          {
+            "name": "[Phase3 Sample] 次の固定予定",
+            "publish": false,
+            "at": "2026-10-12T10:12:08.693Z"
+          },
+          {
+            "name": "[Phase3 Sample] 単独寄り道",
+            "publish": false,
+            "at": "2026-10-12T10:12:09.051Z"
+          },
+          {
+            "name": "[Phase3 Sample] 系列寄り道",
+            "publish": false,
+            "at": "2026-10-12T10:12:09.374Z"
+          },
+          {
+            "name": "[Phase3 Sample] 系列の子",
+            "publish": false,
+            "at": "2026-10-12T10:12:09.882Z"
+          },
+          {
+            "name": "[Phase3 Sample] 比較寄り道",
+            "publish": false,
+            "at": "2026-10-12T10:12:10.205Z"
+          },
+          {
+            "name": "[Phase3 Sample] 比較案A",
+            "publish": false,
+            "at": "2026-10-12T10:12:10.515Z"
+          },
+          {
+            "name": "[Phase3 Sample] 比較案B",
+            "publish": false,
+            "at": "2026-10-12T10:12:10.838Z"
+          }
+        ],
+        "scenarios": [
+          {
+            "viewport": {
+              "width": 390,
+              "height": 844
+            },
+            "noMap": false,
+            "result": "pass",
+            "geoCallsBeforeAction": 0,
+            "oneShot": true,
+            "storageEmpty": true,
+            "appRequestsWithoutCoordinates": true,
+            "directionsCapturedWithoutThirdPartyRequest": true,
+            "noopener": true,
+            "reloadDiscarded": true,
+            "consoleErrors": 0,
+            "uncaughtErrors": 0
+          },
+          {
+            "viewport": {
+              "width": 1440,
+              "height": 900
+            },
+            "noMap": false,
+            "result": "pass",
+            "geoCallsBeforeAction": 0,
+            "oneShot": true,
+            "storageEmpty": true,
+            "appRequestsWithoutCoordinates": true,
+            "directionsCapturedWithoutThirdPartyRequest": true,
+            "noopener": true,
+            "reloadDiscarded": true,
+            "consoleErrors": 0,
+            "uncaughtErrors": 0
+          }
+        ],
+        "cleanup": {
+          "at": "2026-10-12T10:12:59.754Z",
+          "all11PublishFalse": true,
+          "apiItems": 8,
+          "sampleApiItems": 0,
+          "sampleScreenItems": 0,
+          "cacheClean": true,
+          "existing8HashesMatch": true
+        },
+        "failure": "Expected values to be strictly deep-equal:\n+ actual - expected\n\n+ [\n+   \"Cannot read properties of undefined (reading 'title')\"\n+ ]\n- []\n"
+      },
+      {
+        "at": "2026-10-12T10:24:37.586Z",
+        "commit": "c54c5c90b7eea717b1ec9e89e37c8567ff84064b",
+        "changes": [
+          {
+            "name": "[Phase3 Sample] 比較案B",
+            "publish": true,
+            "at": "2026-10-12T10:24:39.985Z"
+          },
+          {
+            "name": "[Phase3 Sample] 比較案A",
+            "publish": true,
+            "at": "2026-10-12T10:24:40.318Z"
+          },
+          {
+            "name": "[Phase3 Sample] 比較寄り道",
+            "publish": true,
+            "at": "2026-10-12T10:24:40.646Z"
+          },
+          {
+            "name": "[Phase3 Sample] 系列の子",
+            "publish": true,
+            "at": "2026-10-12T10:24:41.982Z"
+          },
+          {
+            "name": "[Phase3 Sample] 系列寄り道",
+            "publish": true,
+            "at": "2026-10-12T10:24:42.301Z"
+          },
+          {
+            "name": "[Phase3 Sample] 単独寄り道",
+            "publish": true,
+            "at": "2026-10-12T10:24:42.609Z"
+          },
+          {
+            "name": "[Phase3 Sample] 次の固定予定",
+            "publish": true,
+            "at": "2026-10-12T10:24:44.031Z"
+          },
+          {
+            "name": "[Phase3 Sample] 移動",
+            "publish": true,
+            "at": "2026-10-12T10:24:44.399Z"
+          },
+          {
+            "name": "[Phase3 Sample] 駅の候補",
+            "publish": true,
+            "at": "2026-10-12T10:24:44.750Z"
+          },
+          {
+            "name": "[Phase3 Sample] 寺の候補",
+            "publish": true,
+            "at": "2026-10-12T10:24:45.089Z"
+          },
+          {
+            "name": "[Phase3 Sample] 自由時間",
+            "publish": true,
+            "at": "2026-10-12T10:24:45.512Z"
+          },
+          {
+            "name": "[Phase3 Sample] 自由時間",
+            "publish": false,
+            "at": "2026-10-12T10:25:03.851Z"
+          },
+          {
+            "name": "[Phase3 Sample] 寺の候補",
+            "publish": false,
+            "at": "2026-10-12T10:25:04.191Z"
+          },
+          {
+            "name": "[Phase3 Sample] 駅の候補",
+            "publish": false,
+            "at": "2026-10-12T10:25:04.512Z"
+          },
+          {
+            "name": "[Phase3 Sample] 移動",
+            "publish": false,
+            "at": "2026-10-12T10:25:04.846Z"
+          },
+          {
+            "name": "[Phase3 Sample] 次の固定予定",
+            "publish": false,
+            "at": "2026-10-12T10:25:05.180Z"
+          },
+          {
+            "name": "[Phase3 Sample] 単独寄り道",
+            "publish": false,
+            "at": "2026-10-12T10:25:05.528Z"
+          },
+          {
+            "name": "[Phase3 Sample] 系列寄り道",
+            "publish": false,
+            "at": "2026-10-12T10:25:05.871Z"
+          },
+          {
+            "name": "[Phase3 Sample] 系列の子",
+            "publish": false,
+            "at": "2026-10-12T10:25:06.213Z"
+          },
+          {
+            "name": "[Phase3 Sample] 比較寄り道",
+            "publish": false,
+            "at": "2026-10-12T10:25:06.543Z"
+          },
+          {
+            "name": "[Phase3 Sample] 比較案A",
+            "publish": false,
+            "at": "2026-10-12T10:25:06.967Z"
+          },
+          {
+            "name": "[Phase3 Sample] 比較案B",
+            "publish": false,
+            "at": "2026-10-12T10:25:07.306Z"
+          }
+        ],
+        "scenarios": [
+          {
+            "viewport": {
+              "width": 390,
+              "height": 844
+            },
+            "noMap": false,
+            "result": "pass",
+            "geoCallsBeforeAction": 0,
+            "oneShot": true,
+            "storageEmpty": true,
+            "appRequestsWithoutCoordinates": true,
+            "directionsCapturedWithoutThirdPartyRequest": true,
+            "noopener": true,
+            "reloadDiscarded": true,
+            "consoleErrors": 0,
+            "uncaughtErrors": 0
+          },
+          {
+            "viewport": {
+              "width": 1440,
+              "height": 900
+            },
+            "noMap": false,
+            "result": "pass",
+            "geoCallsBeforeAction": 0,
+            "oneShot": true,
+            "storageEmpty": true,
+            "appRequestsWithoutCoordinates": true,
+            "directionsCapturedWithoutThirdPartyRequest": true,
+            "noopener": true,
+            "reloadDiscarded": true,
+            "consoleErrors": 0,
+            "uncaughtErrors": 0
+          },
+          {
+            "viewport": {
+              "width": 390,
+              "height": 844
+            },
+            "noMap": true,
+            "result": "pass",
+            "geoCallsBeforeAction": 0,
+            "oneShot": true,
+            "storageEmpty": true,
+            "appRequestsWithoutCoordinates": true,
+            "directionsCapturedWithoutThirdPartyRequest": true,
+            "noopener": true,
+            "reloadDiscarded": true,
+            "consoleErrors": 0,
+            "uncaughtErrors": 0
+          }
+        ],
+        "cleanup": {
+          "at": "2026-10-12T10:25:50.920Z",
+          "all11PublishFalse": true,
+          "apiItems": 8,
+          "sampleApiItems": 0,
+          "sampleScreenItems": 0,
+          "cacheClean": true,
+          "existing8HashesMatch": true
+        }
+      }
+    ]
+  },
+  "production": {
+    "url": "https://travel-itinerary.baribaritozan.workers.dev",
+    "worker": "travel-itinerary",
+    "validatedCommit": "c54c5c90b7eea717b1ec9e89e37c8567ff84064b",
+    "deployment": {
+      "id": "afa922c1-0fa9-446e-b104-2c30d479bb31",
+      "versions": [
+        {
+          "version_id": "32964f5b-749a-4af1-a811-2e55eaf1bba6",
+          "percentage": 100
+        }
+      ],
+      "created_on": "2026-10-12T10:24:10.142463Z"
+    },
+    "finalAudit": {
+      "at": "2026-10-12T10:28:03.741Z",
+      "apiItems": 8,
+      "samplesFalse": 11,
+      "sampleApiItems": 0,
+      "existingHashesMatch": true,
+      "checks": [
+        {
+          "viewport": {
+            "width": 390,
+            "height": 844
+          },
+          "result": "pass"
+        },
+        {
+          "viewport": {
+            "width": 1440,
+            "height": 900
+          },
+          "result": "pass"
+        }
+      ]
+    }
+  },
+  "local": {
+    "unitAndIntegration": {
+      "passed": 93,
+      "failed": 0,
+      "skipped": 0,
+      "existing": 52,
+      "added": 41
+    },
+    "browser": {
+      "passed": 35,
+      "failed": 0,
+      "skipped": 0,
+      "existing": 20,
+      "added": 15
+    },
+    "syntaxFiles": 14,
+    "build": "pass",
+    "diffCheck": "pass"
+  }
+}

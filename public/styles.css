@@ -99,6 +99,16 @@ h1 { margin: .4rem 0; font-size: clamp(1.6rem, 4vw, 2.25rem); line-height: 1.2; 
 
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .filter-panel, .time-panel { margin: .5rem 0; padding: .4rem .6rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
+.location-panel { margin: .5rem 0; padding: .4rem .6rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); font-size: .85rem; overflow-wrap: anywhere; }
+.location-status { color: var(--green); }
+.flexible-candidates, .detour-routes { display: grid; gap: .7rem; margin-top: .7rem; min-width: 0; }
+.flexible-candidates > .item::before, .detour-routes > .item::before { display: none; }
+.flexible-candidates > .item { border-style: dashed; }
+.detour-facts { padding: .3rem .5rem; background: #e5f1ea; border-radius: 8px; font-size: .85rem; }
+.detour-facts p { margin: .4rem 0; }
+.directions-section { margin-top: .6rem; padding: .5rem; border: 1px solid var(--line); border-radius: 8px; }
+.directions-button { width: 100%; text-align: left; }
+.current-location-pin { display: grid; place-items: center; color: white; background: #286d62; border: 3px double white; border-radius: 50%; box-shadow: 0 0 0 2px #163a35; font-weight: 800; }
 summary { cursor: pointer; min-height: 44px; display: list-item; padding: .6rem .2rem; }
 .filter-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: .5rem; }
 fieldset { min-width: 0; margin: .4rem 0; border: 1px solid var(--line); border-radius: 8px; }

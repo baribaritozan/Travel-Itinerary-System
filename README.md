@@ -144,3 +144,27 @@ Itinerary Itemsの同じDBに次の2プロパティを追加します。グル�
 - 「地図の時間範囲」は15分刻みの開始/終了スライダー。前後は幅を維持して日付境界で停止します。地図だけを変更し、タイムライン・選択・フォーカスは保持します。候補グループの地図はアクティブ候補、系列は表示中の子を使い、子に地図情報がない場合だけ親の場所を利用します。
 
 詳細な自己Relationの設定は [デプロイ手順](./docs/DEPLOYMENT.md)、要件対応は [Phase 2計画](./docs/PHASE2_PLAN.md)、実環境変更と証拠は [Phase 2報告](./docs/PHASE2_REPORT.md) を参照してください。
+
+## Phase 3 の当日運用
+
+同じItinerary Itemsに以下を追加します。既存の列・option・行はそのまま使用します。
+
+| プロパティ | 型 / 正規値 |
+| --- | --- |
+| Structure | 既存Selectへ `Flexible Block` を追加（Item / Alternative Group / Seriesも保持） |
+| Opening Hours | Rich Text。公開用の営業時間。自動的な営業判定はしません |
+| Detour For | 同じItinerary Itemsへの一方向Relation、0または1件 |
+| Additional Duration Minutes | Number、0以上。寄り道ルートで必須 |
+| Rejoin Place | Placesへの一方向Relation、0または1件。省略時は対象TransitのTo |
+
+自由時間は `Structure=Flexible Block` と開始・終了を持つ時間枠です。直接の子はItemだけで、Periodは空にできます。候補は時刻へ自動配置せず、Order、計画状態、名称の順に一覧表示します。場所・目安所要時間・費用・予約状態・営業時間は各子へ入力してください。親フォーカスは全候補、子フォーカスはその候補の地図を強調します。地図時間範囲は子の登録時刻にかかわらず親Periodで判定します。選択、三状態、フィルターも利用できます。
+
+主階層はAlternative Group→Item/Series/Flexible Block、Series→Item/Flexible Block、Flexible Block→Item。最大はAlternative Group→Series→Flexible Block→Itemです。通常ItemのPeriod必須と既存の代表期間算出・包含検証は維持します。
+
+寄り道はParentではなく、ルートの `Detour For` に同じ旅行の公開 `Item` / `Transit` を1件指定します。ルートはItem、Series、Alternative Groupを使用でき、Additional Duration Minutesが必須です。子孫のDetour Forと寄り道内Flexible Blockは禁止です。時刻未定の末端ItemにはDuration Minutesを入力します。寄り道は対象Transitの詳細内に表示し、寄り道自身を展開・フォーカス・選択したときだけ地図に出ます。追加時間と次の固定予定から余裕/超過/判定不可を表示します。これは登録値による目安で、交通状況・営業時間・待ち時間の保証ではありません。
+
+「現在地と外部経路」を開き、「現在地を表示/更新」を操作すると一回だけ取得します。初期表示・日付・カード操作では権限を要求しません。座標・精度・時刻はブラウザのメモリ内だけで保持し、サーバー/Notion/ログ/永続ストレージへ保存・送信しません。再読み込みで破棄し、5分を超えると更新を案内します。◎マーカーと精度円は旅程のフォーカス・選択対象外です。取得エラー時も旅程は使えます。
+
+詳細の「現在地からの経路を開く」は、第三者のGoogle Mapsへ現在地と目的地を送る明示操作です。HTTPS Directions URLを新しいタブでnoopener付きで開きます。目的地は通常Item/自由時間候補のPlace、TransitのTo、系列のフォーカス中の子または最初の有効な子、候補グループのアクティブ候補です。座標を優先し、なければ公開住所を使用します。Walk=walking、Train/Bus=transit、Car=driving、Ferry/未設定はtravelmode省略。現在地が未取得・古い場合や目的地が未設定の場合は理由を表示して無効化します。アプリ内の経路検索API・位置追跡・位置履歴はありません。
+
+Phase 3の要件対応・baselineは [計画](./docs/PHASE3_PLAN.md)、実環境の変更・検証・復旧は [報告](./docs/PHASE3_REPORT.md) を参照してください。
