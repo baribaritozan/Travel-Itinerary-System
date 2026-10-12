@@ -20,7 +20,7 @@
 | 変更前 npm test / npm run test:browser | 93/35全通過。phase4-baseline-unit.log / phase4-baseline-browser.log |
 | npm test | 109全通過。既存93件維持、新規16件。phase4-unit.log |
 | npm run test:browser | 39全通過。既存35件維持、新規4件。phase4-browser.log |
-| npm run test:pwa | 実SW・永続profileの9件。Cloudflare同様のindex redirect・既知の不良版からの回復を含む。最終結果はphase4-pwa-final.log。 |
+| npm run test:pwa | 実SW・永続profileの9件全通過。Cloudflare同様のindex redirect・既知の不良版からの回復を含む。phase4-pwa-final.log。合計157件全通過。 |
 | npm run build / 全JS・MJS node --check / git diff --check | build成功、22source files構文成功、差分問題なし |
 | npm run build:recovery / wrangler deploy --config artifacts/phase4-recovery-wrangler.jsonc --dry-run | 既存Worker設定で復旧ビルド生成・dry-run成功。phase4-recovery-dry-run.log |
 
@@ -42,7 +42,13 @@ Worker: `travel-itinerary`、URL: https://travel-itinerary.baribaritozan.workers
 
 失敗後は事前検証済み復旧buildをversion `5a802817-8eb7-4c8c-bf0c-281e7a0f48da`、deployment `bf5c17e1-7abc-47e5-9f28-12c0c37bd628`へ配信して旧UIへ戻した。失敗した実本番profileへ復旧SWを適用し、DB/cache/登録がすべて0、旧UIとAPIのpayload hash一致を確認。phase4-recovery-live.json / phase4-recovery-smoke.log / phase4-recovery-deployment.json。
 
-修正版の最終deploy/version/smoke/PR: 検証後に追記する。
+修正版コードcommit `a1b097d7ec8abe18ea539c9c68710d569d6e0281` をpush・dry-run後、2026-10-12T13:37:20.017721Zに最終deployment `22da1af8-01ec-4cae-9a2a-b6101450de4a`、version `0a718c9e-ffdd-495f-ad7f-1bb29f881a3e`、100%へ配信。shell build版 `f296d3aadfb1163d`。phase4-final-dry-run.log / phase4-final-deploy.log / phase4-final-deployment.json。
+
+最終本番smoke成功（2026-10-12T13:40:33.484Z）。16起動用ファイルのSHA-256・sw.js配信内容/JS MIME/no-cache一致、公開hash境界、日付/詳細/focus/地図、位置要求0、明示保存→profile終了→圏外再起動→pin/概略線、再接続GET、登録区間の実popup/opener=null/Google通信捕捉、保存解除後のDB/cache/SW全0、POST0、payload hash完全一致。phase4-production-smoke.json / phase4-production-smoke-final.log。入れ子旅程は親から順に詳細をUIで展開して検証するようsmoke scriptを修正した。初回の検証selectorで親だけを展開したtimeoutは、アプリの経路機能の失敗ではない。
+
+本番画像 phase4-production-mobile.png / phase4-production-desktop.png / phase4-production-offline.png も開いて確認済み。Google通信は捕捉し、地図背景にはfixture tileを使用してOSMへprefetch・自動走査しない。アプリに地図タイル保存はない。最終公開19 items/2 places、Phase 3サンプル11件は作業開始時の状態を維持。Notionを変更していない。
+
+PR: 作成後にURLを追記する。mergeは行わない。最終報告commitと上記deploy対象commitの差分は仕様・報告・検証スクリプトのみで、配信コードに差分はない。
 
 ## 復旧・制約
 

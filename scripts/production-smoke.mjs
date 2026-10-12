@@ -43,10 +43,14 @@ try {
     await configureRoutes(context); await context.setOffline(false); await page.waitForFunction(() => document.querySelector(".offline-status").textContent.includes("オンライン"));
     let routeOpened = false;
     for (const button of await page.locator(".day-button").all()) {
-      await button.click(); const transit = page.locator(".item").filter({ has: page.locator("[data-planned]") }).first();
-      if (!await transit.count()) continue;
-      await transit.locator(":scope > .details-toggle").click(); const route = transit.locator("[data-planned]").first(); if (await route.isDisabled()) continue;
-      const opened = context.waitForEvent("page"); await route.click(); const popup = await opened; await popup.waitForLoadState(); assert.equal(new URL(popup.url()).origin, "https://www.google.com"); assert.equal(await popup.evaluate(() => window.opener), null); await popup.close(); routeOpened = true; break;
+      await button.click();
+      for (const route of await page.locator("[data-planned]").all()) {
+        const ancestors = await route.evaluate(button => { const ids = []; for (let item = button.closest(".item"); item; item = item.parentElement.closest(".item")) ids.unshift(item.dataset.id); return ids; });
+        for (const id of ancestors) { const toggle = page.locator(`.item[data-id="${id}"] > .details-toggle`); if (await toggle.getAttribute("aria-expanded") === "false") await toggle.click(); }
+        if (!await route.isVisible() || await route.isDisabled()) continue;
+        const [popup] = await Promise.all([context.waitForEvent("page"), route.click()]); await popup.waitForLoadState(); assert.equal(new URL(popup.url()).origin, "https://www.google.com"); assert.equal(await popup.evaluate(() => window.opener), null); await popup.close(); routeOpened = true; break;
+      }
+      if (routeOpened) break;
     }
     assert.ok(routeOpened, "production planned route opened with network intercepted"); assert.equal(await page.evaluate(() => __geoCalls), 0); evidence.checks.push("reconnected GET", "planned route real noopener popup, Google network intercepted");
     await page.locator(".delete-offline").click(); await page.waitForFunction(() => document.querySelector(".storage-message").textContent.includes("削除しました"));
