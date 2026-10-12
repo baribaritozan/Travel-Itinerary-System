@@ -1,6 +1,6 @@
 # Phase 4 実装・検証報告
 
-2026-10-12。正式仕様: SPECIFICATION.md v0.5 §23。実装branch: `codex/phase4-20261012`。PRは作成後に記録し、mergeは行わない。
+2026-10-12。正式仕様: SPECIFICATION.md v0.5 §23。実装branch: `codex/phase4-20261012`。[PR #3](https://github.com/baribaritozan/Travel-Itinerary-System/pull/3)作成済み、未merge。
 
 ## 実装
 
@@ -48,7 +48,7 @@ Worker: `travel-itinerary`、URL: https://travel-itinerary.baribaritozan.workers
 
 本番画像 phase4-production-mobile.png / phase4-production-desktop.png / phase4-production-offline.png も開いて確認済み。Google通信は捕捉し、地図背景にはfixture tileを使用してOSMへprefetch・自動走査しない。アプリに地図タイル保存はない。最終公開19 items/2 places、Phase 3サンプル11件は作業開始時の状態を維持。Notionを変更していない。
 
-PR: 作成後にURLを追記する。mergeは行わない。最終報告commitと上記deploy対象commitの差分は仕様・報告・検証スクリプトのみで、配信コードに差分はない。
+PR: https://github.com/baribaritozan/Travel-Itinerary-System/pull/3 、base main、open/未merge。Codex chatへ添付済み。最終報告commitと上記deploy対象commitの差分は仕様・報告・検証スクリプトのみで、配信コードに差分はない。自動検証・本番Chrome検証済みとしてPhase 4の今回範囲を完了する。
 
 ## 復旧・制約
 
