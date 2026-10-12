@@ -20,7 +20,7 @@
 | 変更前 npm test / npm run test:browser | 93/35全通過。phase4-baseline-unit.log / phase4-baseline-browser.log |
 | npm test | 109全通過。既存93件維持、新規16件。phase4-unit.log |
 | npm run test:browser | 39全通過。既存35件維持、新規4件。phase4-browser.log |
-| npm run test:pwa | 実SW・永続profileの8件全通過。phase4-pwa.log |
+| npm run test:pwa | 実SW・永続profileの9件。Cloudflare同様のindex redirect・既知の不良版からの回復を含む。最終結果はphase4-pwa-final.log。 |
 | npm run build / 全JS・MJS node --check / git diff --check | build成功、22source files構文成功、差分問題なし |
 | npm run build:recovery / wrangler deploy --config artifacts/phase4-recovery-wrangler.jsonc --dry-run | 既存Worker設定で復旧ビルド生成・dry-run成功。phase4-recovery-dry-run.log |
 
@@ -36,10 +36,16 @@ Worker: `travel-itinerary`、URL: https://travel-itinerary.baribaritozan.workers
 
 作業時の公開APIは19 items/2 places、Phase 3 Sample 11件が既に公開されていた（前回Phase 3完了報告後の更新）。generatedAt `2026-10-12T11:01:18.639Z`、payload SHA-256 `1fec942d4a43b395a22f474ddc1b9c0b8f37646d42a2dd357f6e85d71ad7af7a`。現在状態をbaselineとして保持し、Notionへの変更・refresh POSTは今回行わない。公開IDのhash形式・画面操作・位置要求0・前後payload一致を確認。phase4-production-baseline.json、baseline画像2枚。
 
-本番deploy/version/最終smoke/PR: ローカル最終検証後に実施・追記する。
+初回実装commit `8600fb49a3ec6c2b50e0f06e62c6f88571f19137`をpush・dry-run後、version `06fdd917-1fa3-4204-90bc-a855d1209098`、deployment `5d935585-b3d6-4c72-90f3-21eb5ad3b3e7`へ配信。最初はdeployment一覧のmalformed responseで停止し、4.149.0でも再現。既存認証の直接readと同じ4.148.0 CLIの再確認で正常応答に戻り、その後のdeployが成功した。認証値の出力・保存、OS設定変更、秘密値変更は行っていない。
+
+本番smokeは全配信hashの一致後、圏外再起動で失敗。Cloudflareの `/index.html`→`/` redirectをそのままCacheへ保存したResponseはmanual navigationへ返せないことが原因。ローカルfixtureへ同じ307 redirectを追加し、precache HTMLの取得を転送のない `/` へ修正した。初回の不良shell版 `de42708cbeae0de0` を保存済みの端末だけを自動回復する処理も追加。通常更新は明示切替を維持する。
+
+失敗後は事前検証済み復旧buildをversion `5a802817-8eb7-4c8c-bf0c-281e7a0f48da`、deployment `bf5c17e1-7abc-47e5-9f28-12c0c37bd628`へ配信して旧UIへ戻した。失敗した実本番profileへ復旧SWを適用し、DB/cache/登録がすべて0、旧UIとAPIのpayload hash一致を確認。phase4-recovery-live.json / phase4-recovery-smoke.log / phase4-recovery-deployment.json。
+
+修正版の最終deploy/version/smoke/PR: 検証後に追記する。
 
 ## 復旧・制約
 
-Git baseline `6c334c1`、annotated tag `phase4-baseline-20261012`、専用branchを実装前にoriginへpush済み。復旧時は `node scripts/recovery-build.mjs phase4-baseline-20261012` → 生成configでdry-run/deploy。既存Worker/DO/bindings/varsを使用し、元checkoutはresetしない。復旧workerによる退役・旧UIをローカルで検証済み。実本番でのrollbackは必要がない限り行わない。
+Git baseline `6c334c1`、annotated tag `phase4-baseline-20261012`、専用branchを実装前にoriginへpush済み。復旧時は `node scripts/recovery-build.mjs phase4-baseline-20261012` → 生成configでdry-run/deploy。既存Worker/DO/bindings/varsを使用し、元checkoutはresetしない。復旧workerによる退役・旧UIをローカルと上記の実本番profileで検証済み。
 
 背景地図はオンラインのみ。iPhone/Android実機確認は後続で、今回の完了表現は自動・本番Chrome検証済みとする。ブラウザeviction、閉じた端末の正確な期限時刻の物理削除、圏外端末への公開取り下げ即時反映は保証しない。経由地/Series連結/寄り道復帰リンクは後続。新地図契約・Notion変更・Cloudflareリソース新設・PR mergeは行わない。

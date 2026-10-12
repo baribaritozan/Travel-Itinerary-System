@@ -13,8 +13,11 @@ const profile = await mkdtemp(resolve(tmpdir(), "travel-live-"));
 const launch = () => chromium.launchPersistentContext(profile, { channel: process.platform === "win32" ? "chrome" : undefined, headless: true, viewport: { width: 390, height: 844 }, reducedMotion: "reduce" });
 let context;
 const evidence = { checkedAt: new Date().toISOString(), mode: baseline ? "baseline" : "phase4", publicItems: payload.items.length, publicPlaces: payload.places.length, phase3SamplesAtTaskStart: payload.items.filter(item => item.title.startsWith("[Phase3 Sample]")).length, payloadHash, apiCache: apiResponse.headers.get("X-Itinerary-Cache"), checks: [] };
-async function configure(context) {
+async function configure(context, routes = true) {
   await context.addInitScript(() => { window.__geoCalls = 0; Object.defineProperty(navigator, "geolocation", { value: { getCurrentPosition() { window.__geoCalls++; throw new Error("Smoke must not request position"); } } }); });
+  if (routes) await configureRoutes(context);
+}
+async function configureRoutes(context) {
   await context.route("https://tile.openstreetmap.org/**", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#dbe6df"/></svg>' }));
   await context.route("https://unpkg.com/**", async route => { const css = route.request().url().endsWith(".css"); await route.fulfill({ contentType: css ? "text/css" : "application/javascript", body: await readFile(`node_modules/leaflet/dist/leaflet.${css ? "css" : "js"}`) }); });
   await context.route("https://www.google.com/**", route => route.fulfill({ contentType: "text/html", body: "<title>External route intercepted</title>" }));
@@ -34,10 +37,10 @@ try {
     for (const file of manifest.precache) { const response = await fetch(base + file.url); assert.equal(response.status, 200); assert.equal(createHash("sha256").update(Buffer.from(await response.arrayBuffer())).digest("hex"), file.hash, `deployed ${file.url}`); }
     const worker = await fetch(base + "/sw.js"); assert.match(worker.headers.get("content-type"), /javascript/); assert.match(worker.headers.get("cache-control"), /no-cache/); assert.equal(await worker.text(), await readFile("dist/sw.js", "utf8")); evidence.checks.push("all deployed shell hashes and SW headers");
     await page.locator(".offline-panel summary").click(); await page.locator(".save-offline").click(); await page.waitForFunction(() => document.querySelector(".storage-message").textContent.includes("有効にしました")); await page.waitForFunction(() => navigator.serviceWorker.controller);
-    await context.close(); context = await launch(); await configure(context); await context.setOffline(true); page = context.pages()[0]; monitor(page);
+    await context.close(); context = await launch(); await configure(context, false); await context.setOffline(true); page = context.pages()[0]; monitor(page);
     await page.goto(base); await page.locator(".item").first().waitFor(); await page.locator(".place-pin").first().waitFor(); assert.equal(await page.evaluate(() => __geoCalls), 0); evidence.checks.push("saved profile closed then offline restarted", "offline pins and schematic lines");
     await page.locator(".offline-panel summary").click(); await page.screenshot({ path: "artifacts/phase4-production-offline.png" });
-    await context.setOffline(false); await page.waitForFunction(() => document.querySelector(".offline-status").textContent.includes("オンライン"));
+    await configureRoutes(context); await context.setOffline(false); await page.waitForFunction(() => document.querySelector(".offline-status").textContent.includes("オンライン"));
     let routeOpened = false;
     for (const button of await page.locator(".day-button").all()) {
       await button.click(); const transit = page.locator(".item").filter({ has: page.locator("[data-planned]") }).first();

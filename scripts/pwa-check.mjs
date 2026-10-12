@@ -30,6 +30,7 @@ const server = createServer(async (req, res) => {
   const path = new URL(req.url, "http://localhost").pathname; requests.push({ method: req.method, path });
   try {
     if (path.startsWith("/api/")) { if (delay) await new Promise(resolve => setTimeout(resolve, delay)); res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store", "X-Itinerary-Cache": cacheHeader }); res.end(JSON.stringify(payload)); return; }
+    if (path === "/index.html") { res.writeHead(307, { Location: "/" }); res.end(); return; }
     if (path === "/favicon.ico") { res.writeHead(204); res.end(); return; }
     let bytes;
     if (path === "/sw.js") {
@@ -184,4 +185,12 @@ test("PWA incomplete initial shell leaves no partial cache and retry succeeds", 
   await page.waitForFunction(() => !document.querySelector(".save-offline").disabled && document.querySelector(".storage-message").textContent.includes("保存できません"));
   assert.deepEqual(await page.evaluate(() => caches.keys()), []); assert.equal(await page.locator(".item").count(), 8);
   broken = false; await page.locator(".save-offline").click(); await page.waitForFunction(() => document.querySelector(".storage-message").textContent.includes("有効にしました")); assert.equal((await page.evaluate(() => caches.keys())).length, 1);
+});
+
+test("PWA known broken production shell receives automatic repair; ordinary updates still wait", async t => {
+  const { page } = await setup(t); await enable(page);
+  await page.evaluate(() => caches.open("travel-itinerary-shell-de42708cbeae0de0"));
+  shellVariant = "repaired-release"; await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).update());
+  await page.waitForFunction(() => document.documentElement.nextSibling?.textContent.includes("repaired-release"));
+  assert.equal((await page.evaluate(() => caches.keys())).length, 1); assert.ok((await record(page)).payload);
 });
