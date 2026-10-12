@@ -168,3 +168,10 @@ Itinerary Itemsの同じDBに次の2プロパティを追加します。グル�
 詳細の「現在地からの経路を開く」は、第三者のGoogle Mapsへ現在地と目的地を送る明示操作です。HTTPS Directions URLを新しいタブでnoopener付きで開きます。目的地は通常Item/自由時間候補のPlace、TransitのTo、系列のフォーカス中の子または最初の有効な子、候補グループのアクティブ候補です。座標を優先し、なければ公開住所を使用します。Walk=walking、Train/Bus=transit、Car=driving、Ferry/未設定はtravelmode省略。現在地が未取得・古い場合や目的地が未設定の場合は理由を表示して無効化します。アプリ内の経路検索API・位置追跡・位置履歴はありません。
 
 Phase 3の要件対応・baselineは [計画](./docs/PHASE3_PLAN.md)、実環境の変更・検証・復旧は [報告](./docs/PHASE3_REPORT.md) を参照してください。
+# Phase 4：端末保存とPWA
+
+「端末保存とホーム画面」→「この端末に保存」で公開旅程と起動用ファイルを保存できます。圏外で旅程・地点・概略線を参照でき、背景地図には通信が必要です。ホーム画面へのインストールと旅程保存は別操作です。初回保存から30日、同じNotion同期版の再取得では延長せず、新しい正常同期版で置換して期限を更新します。ブラウザが保存領域を削除した場合は再保存が必要です。
+
+現在地は従来どおり明示取得・メモリ限定です。登録済みFrom→Toを開く「Google Mapsで予定区間を開く」は現在地を要求しません。外部サービスには通信が必要です。「保存を解除して削除」で本アプリの旅程・設定・起動用cache・Service Workerを削除できます。公開取り下げを圏外端末へ即時反映することはできません。
+
+`npm run test:pwa`は実Service Worker・永続Chrome profileで終了後の圏外起動、期限、削除、更新、復旧を確認します。`npm run build:recovery`は既存Worker用の復旧assets/configをartifactsへ作成します。iPhone/Android実機確認は後続です。詳細は[Phase 4計画](docs/PHASE4_PLAN.md)と[デプロイ手順](docs/DEPLOYMENT.md)を参照してください。

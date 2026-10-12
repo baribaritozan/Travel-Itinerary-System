@@ -7,7 +7,9 @@
     "build": "node scripts/build.mjs",
     "dev": "npm run build && npx wrangler dev",
     "test": "node --test",
-    "test:browser": "npm run build && node --test scripts/browser-check.mjs"
+    "test:browser": "npm run build && node --test scripts/browser-check.mjs",
+    "test:pwa": "npm run build && node scripts/recovery-build.mjs && node --test scripts/pwa-check.mjs",
+    "build:recovery": "node scripts/recovery-build.mjs"
   },
   "engines": {
     "node": ">=24"
