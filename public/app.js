@@ -317,6 +317,7 @@ function setupCandidates() {
     let timer;
     carousel.addEventListener("scroll", () => {
       clearTimeout(timer); timer = setTimeout(() => {
+        if (!carousel.isConnected) return;
         if (!mobile()) { updateCandidateControls(carousel.dataset.group); return; }
         const slots = [...carousel.children]; const left = carousel.getBoundingClientRect().left;
         const nearest = slots.reduce((best, slot) => Math.abs(slot.getBoundingClientRect().left - left) < Math.abs(best.getBoundingClientRect().left - left) ? slot : best, slots[0]);
@@ -327,10 +328,13 @@ function setupCandidates() {
 }
 function stepCandidate(groupId, direction) {
   const group = visibleItems.find((node) => node.id === groupId);
+  if (!group?.children.length) return;
   const index = group.children.findIndex((node) => node.id === state.activeCandidateByGroup.get(groupId));
   activateCandidate(groupId, group.children[Math.max(0, Math.min(group.children.length - 1, index + direction))].id);
 }
 function activateCandidate(groupId, id, scroll = true) {
+  const group = visibleItems.find((node) => node.id === groupId);
+  if (!group?.children.some(child => child.id === id)) return;
   const changed = state.activeCandidateByGroup.get(groupId) !== id;
   state.activeCandidateByGroup.set(groupId, id);
   const carousel = itemsElement.querySelector(`.group-candidates[data-group="${CSS.escape(groupId)}"]`);
@@ -341,14 +345,16 @@ function activateCandidate(groupId, id, scroll = true) {
     updateCandidateControls(groupId);
   }
   if (changed) {
-    const group = visibleItems.find((node) => node.id === groupId);
     app.querySelector(".focus-status").textContent = `${group.title}：${group.children.find((node) => node.id === id).title}を表示しています。`;
     renderMap(false); paintFocus();
   }
 }
 function updateCandidateControls(groupId) {
-  const group = visibleItems.find((node) => node.id === groupId), index = group.children.findIndex((node) => node.id === state.activeCandidateByGroup.get(groupId));
+  const group = visibleItems.find((node) => node.id === groupId);
+  if (!group) return;
+  const index = group.children.findIndex((node) => node.id === state.activeCandidateByGroup.get(groupId));
   const controls = itemsElement.querySelector(`.candidate-controls[data-group="${CSS.escape(groupId)}"]`);
+  if (!controls) return;
   controls.querySelector(".candidate-position").textContent = `${index + 1} / ${group.children.length}`;
   controls.querySelector('[data-candidate-step="-1"]').hidden = index === 0; controls.querySelector('[data-candidate-step="1"]').hidden = index === group.children.length - 1;
   const carousel = itemsElement.querySelector(`.group-candidates[data-group="${CSS.escape(groupId)}"]`);

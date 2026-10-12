@@ -145,9 +145,11 @@ test("manual map zoom survives focus and automatic focus runs after scroll settl
   await page.locator(".show-all").click(); assert.equal(await page.evaluate(() => __mapCalls.fit), fit + 1);
   await card(page, "arrival").locator(".details-toggle").click(); await page.clock.runFor(300);
   const panBefore = await page.evaluate(() => __mapCalls.pan);
-  await page.locator(".timeline-panel").evaluate((el) => { el.scrollTop = 350; }); await page.clock.runFor(50);
+  // Native scroll events arrive on a renderer frame, outside the fake timer queue.
+  // Observe each event before advancing the debounce clock; keep all timing assertions.
+  await page.locator(".timeline-panel").evaluate(async (el) => { const scrolled = new Promise(resolve => el.addEventListener("scroll", resolve, { once: true })); el.scrollTop = 350; await scrolled; }); await page.clock.runFor(50);
   assert.equal(await page.evaluate(() => __mapCalls.pan), panBefore, "no map animation while scrolling");
-  await page.locator(".timeline-panel").evaluate((el) => { el.scrollTop = 370; }); await page.clock.runFor(300);
+  await page.locator(".timeline-panel").evaluate(async (el) => { const scrolled = new Promise(resolve => el.addEventListener("scroll", resolve, { once: true })); el.scrollTop = 370; await scrolled; }); await page.clock.runFor(300);
   const expected = await page.evaluate(() => {
     const spot = document.querySelector(".timeline-panel").getBoundingClientRect().height / 2;
     return [...document.querySelectorAll(".item")].map((el) => { const r = el.getBoundingClientRect(); return { id: el.dataset.id, d: spot < r.top ? r.top - spot : spot > r.bottom ? spot - r.bottom : 0 }; }).sort((a, b) => a.d - b.d)[0].id;
@@ -477,4 +479,12 @@ test("Phase 3 real Geolocation API respects deployed Permissions-Policy and expl
   assert.equal(await page.evaluate(()=>__geoCalls),0);await page.locator(".location-panel > summary").click();await page.locator(".location-button").click();
   await page.locator(".location-status").filter({hasText:"精度"}).waitFor();assert.equal(await page.evaluate(()=>__geoCalls),1);assert.equal(await page.locator(".current-location-pin").count(),1);
   const response=await page.request.get(base);assert.match(response.headers()["permissions-policy"],/geolocation=\(self\)/);assert.match(response.headers()["permissions-policy"],/camera=\(\), microphone=\(\)/);
+});
+test("Phase 3 pending candidate scroll callback is harmless after filters remove its carousel", async t => {
+  const { page } = await open(t,{payload:phase3Fixture,noMap:true});
+  await own(page,"p3-transit",".details-toggle").click();await page.getByRole("button",{name:"比較する寄り道の次の候補",exact:true}).click();await page.clock.runFor(400);
+  assert.equal(await page.locator('[data-activate="d-b"]').getAttribute("aria-pressed"),"true");
+  await page.locator('.group-candidates[data-group="d-group"]').evaluate(el=>el.dispatchEvent(new Event("scroll")));
+  await page.locator(".filter-panel > summary").click();await page.locator('.filter-fields input[data-filter="type"][value="Transit"]').check();await page.clock.runFor(400);
+  await page.locator(".clear-filters").click();assert.equal(await card(page,"d-group").count(),1);await noOverflow(page);
 });

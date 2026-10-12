@@ -21,7 +21,7 @@
 | 13 / FR-21 | resolveDestination/buildDirectionsUrl、明示buttonからwindow.open | model全構造、全travelmode、公開住所encoding、固定origin/許可パラメーター。browser「Directions all structures」通常/Transit/自由時間子/寄り道/Series/active group、無効理由、実popup opener=null。現在地は操作時にのみURLへ追加、第三者送信文言あり |
 | 14 | 失敗状態を旅程stateと独立、外部経路catch | browser位置取得全失敗でも選択可、「map/external failure」でLeaflet遮断/外部popup例外でも候補詳細・選択・既存地図リンク継続 |
 | 15 | 既存CSS色/余白/リング/native controls/ariaを拡張 | 390×844、1440×900、200%文字、reduced motion、44px測定、Tab/Enter/Space/矢印、横溢れなし。実際に画像を開いて確認 |
-| 16 / FR-01〜17 | 既存6テストファイルと既存browser20件を保持 | 既存52 + 追加41 = 93件、既存20 + 追加14 = 34件。既存testsファイルのbaselineとの差分0、既存browser期待値/テスト本体変更なし（open helperに任意initScript、fixture serverへ実配信ヘッダーを適用） |
+| 16 / FR-01〜17 | 既存6テストファイルと既存browser20件を保持 | 既存52 + 追加41 = 93件、既存20 + 追加15 = 35件。既存testsファイルのbaselineとの差分0。既存browser期待値は全保持。scrollテストはnative通知を観測してから擬似時計を進める同期だけ追加。open helperに任意initScript、fixture serverへ実配信ヘッダーを適用 |
 
 Phase 1・2の既存テストはtimezone/公開境界/危険URL/キャッシュ/refresh/webhook/日付/詳細/単一focus/地図/候補/系列/複数選択/フィルター/時間範囲/モバイル/キーボードを継続検証する。対象外のWeb編集、採用案保存、経路検索API、継続追跡、PWAは追加していない。
 
@@ -58,6 +58,13 @@ Node実体 `C:\Users\wyuya\AppData\Local\Volta\tools\image\node\24.21.0\node.exe
 | node artifacts/phase3-live.mjs audit; wrangler deployments status --json | 390/1440 smoke、公開8件、サンプル0、11行false、hash一致。phase3-rollback-smoke.json / phase3-rollback-status.json |
 | node --test --test-name-pattern='Phase 3 real Geolocation' scripts/browser-check.mjs | 実配信ヘッダー適用後、禁止設定で1/1失敗を再現。phase3-permissions-red.txt。モック成功だけでは設定を検証できないことを修正 |
 | 修正後 npm test / npm run test:browser / npm run build / 全node --check / git diff --check | 93/93、34/34、fail0 skip0、build/14構文/diff成功。phase3-unit-after-policy.txt / phase3-browser-after-policy.txt / phase3-build-after-policy.txt。実API＋許可済み固定座標でも成功 |
+| 既存Wrangler deploy --dry-run → deploy（commit 18f1178） | 成功。phase3-deploy-policy-dry-run.txt / phase3-deploy-policy.txt |
+| node artifacts/phase3-live.mjs live 18f11785e8821e29abcc2f62c608e54908bee7f0 | mobile/PC成功、Leaflet遮断条件で候補scrollの遅延callbackがfilter後の消えたgroupを参照し失敗。finallyで全11行false・API/画面/キャッシュ除去・8行hash一致。phase3-production-second-failed.json / -command.txt |
+| wrangler rollback 87cc8434-86d1-49d4-8f91-a81788237157 --yes --message ...; node artifacts/phase3-live.mjs audit | 2回目の復旧成功、390/1440 smoke、公開8件/サンプル0/11行false/hash一致。phase3-rollback-second.txt / phase3-rollback-smoke.json |
+| node --test --test-name-pattern='pending candidate scroll' scripts/browser-check.mjs（修正前） | detached carouselの遅延通知で1/1失敗を再現。phase3-candidate-race-red.txt。isConnected/現行group/現行candidateの検査を追加 |
+| 修正後 npm test / npm run test:browser | 93/93、34/35。新規競合テスト成功、既存scrollテストの断続失敗。phase3-unit-after-race.txt / phase3-browser-after-race.txt |
+| scrollイベント時刻の診断、関連2テストを8回実行 | native scroll通知が擬似clock.runForの後に届く失敗を再現。通知を観測してからclockを進める同期だけ追加し、2件×8回すべて成功。既存の50ms中の地図不変・300ms後focus・700ms後の安定・pan高々1回を全保持 |
+| 最終修正後 npm test / npm run test:browser / npm run build / 全node --check / git diff --check | 93/93、35/35、fail0 skip0、build/14構文/diff成功。phase3-unit-final-validated.txt / phase3-browser-final-validated.txt / phase3-build-final-validated.txt。既存6テストと仕様のbaseline差分0 |
 
 通常のブラウザシナリオはconsole error/uncaught error 0。Leaflet/タイル/API失敗注入時のブラウザnetwork errorは明示条件だけ許容する。過去の失敗ログを削除せず原因と修正を記録した。
 
@@ -120,7 +127,9 @@ wrangler deploy
 
 全11行の非公開復帰・API/画面/キャッシュ消滅・既存8行hash一致を19:04:52.445に確認後、19:06:04.620に確認済みPhase 2 versionへrollbackした（deployment a3c53bf6-12f9-49ff-b76e-f1dabfdb009b、旧version 100%）。19:06:50.952の390/1440復旧smoke成功、サンプルfalse/消滅/hash一致を再確認した。その後だけ、同一origin許可へのヘッダー最小修正と、実Geolocation＋ブラウザ権限エミュレーションの回帰テストを追加した。camera/microphone禁止は維持する。
 
-再デプロイ・最終smoke・PRは結果待ち。Phase 3サンプルは全11件false。未達のままGoalは完了にしない。
+2回目のデプロイは19:10:52.003 JST、commit 18f11785e8821e29abcc2f62c608e54908bee7f0、deployment 5a8818d5-8e87-4437-b775-43908cea5696、version d12b4e06-a5dd-4d84-8b90-b5353f77cc6a。19:11:49.856開始のsmokeでmobile/PCは成功し、実APIでの位置取得・メモリ境界・Directions/noopenerも成功した。一方、Leaflet遮断条件で候補切替後にfilterをかけると、遅延scroll callbackが削除済みcarouselを参照してuncaught errorになった。
+
+19:12:59.754に全11行false・API/画面/キャッシュ消滅・既存8行hash一致を確認し、同じ旧versionへ再rollbackした。19:13:58.561の390/1440復旧smokeも成功。削除済みcarouselおよび現行treeにないgroup/candidateを無視する最小修正と、再現回帰テストを追加した。再デプロイ・最終smoke・PRは結果待ち。未達のままGoalは完了にしない。
 
 ## 変更ファイル・制約
 
