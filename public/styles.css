@@ -162,3 +162,8 @@ input[type="checkbox"] { flex: 0 0 24px; width: 24px; height: 24px; accent-color
   .shell[data-large-text="true"] .candidate-facts dd { text-align: left; }
   .shell[data-large-text="true"] .series-timeline { margin-left: 16px; padding-left: 10px; }
 }
+.offline-panel { border: 1px solid var(--line); border-radius: 12px; padding: .7rem; margin: .8rem 0; overflow-wrap: anywhere; }
+.offline-panel button { margin: .25rem 0; max-width: 100%; }
+.offline-panel p, .planned-section p { font-size: .85rem; }
+.transport-label { pointer-events: none; text-align: center; }
+.transport-label span { display: inline-block; background: #fffdf5; color: #163a35; border: 1px solid #61776c; border-radius: 9px; padding: 4px 8px; font-size: 12px; white-space: nowrap; box-shadow: 0 1px 3px #163a3533; }

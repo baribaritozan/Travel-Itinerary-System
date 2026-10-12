@@ -36,9 +36,9 @@ const server = createServer(async (req, res) => {
     const path = new URL(req.url, "http://localhost").pathname;
     if (path.startsWith("/api/")) { res.writeHead(200, { "Content-Type": "application/json", "X-Itinerary-Cache": "hit" }); res.end(JSON.stringify(fixture)); return; }
     if (path === "/favicon.ico") { res.writeHead(204); res.end(); return; }
-    if (!["/", "/index.html", "/app.js", "/model.mjs", "/styles.css"].includes(path)) { res.writeHead(404); res.end(); return; }
+    if (!["/", "/index.html", "/sw.js", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"].includes(path) && !/^\/assets\/[a-zA-Z0-9./-]+$/.test(path)) { res.writeHead(404); res.end(); return; }
     const file = path === "/" ? "index.html" : path.slice(1);
-    res.writeHead(200, { ...assetHeaders, "Content-Type": { ".html": "text/html", ".js": "application/javascript", ".mjs": "application/javascript", ".css": "text/css" }[extname(file)] }); res.end(await readFile(resolve("dist", file)));
+    res.writeHead(200, { ...assetHeaders, "Content-Type": { ".html": "text/html", ".js": "application/javascript", ".mjs": "application/javascript", ".css": "text/css", ".png": "image/png", ".webmanifest": "application/manifest+json" }[extname(file)] }); res.end(await readFile(resolve("dist", file)));
   } catch { res.writeHead(500); res.end(); }
 });
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -55,8 +55,8 @@ async function open(t, options = {}) {
   const page = await context.newPage(), errors = [], consoles = [];
   page.setDefaultTimeout(8000);
   page.on("pageerror", (error) => errors.push(error.message)); page.on("console", (message) => { if (message.type() === "error") consoles.push(message.text()); });
-  await context.route("https://unpkg.com/**", async (route) => {
-    if (options.noMap && route.request().url().endsWith("leaflet.js")) return route.abort();
+  await context.route("**/assets/leaflet.*", async (route) => {
+    if (options.noMap && /leaflet\.[a-f0-9]+\.js$/.test(route.request().url())) return route.abort();
     const isCss = route.request().url().endsWith(".css"); await route.fulfill({ contentType: isCss ? "text/css" : "application/javascript", body: isCss ? css : leaflet + "\n" + instrument });
   });
   await context.route("https://tile.openstreetmap.org/**", (route) => options.noTiles ? route.abort() : route.fulfill({ contentType: "image/svg+xml", body: tile }));
@@ -360,6 +360,37 @@ const geoSuccess = () => {
   window.__geoCalls = 0;
   Object.defineProperty(navigator, "geolocation", { configurable: true, value: { getCurrentPosition(success) { window.__geoCalls++; success({ coords: { latitude: 34.986123, longitude: 135.759456, accuracy: 12 }, timestamp: Date.now() }); }, watchPosition() { throw new Error("watchPosition forbidden"); } } });
 };
+
+test("Phase 4 planned route is location-free, safe real popup; copy fallback and transport popup", async t => {
+  const { page, context } = await open(t, { initScript: geoSuccess });
+  await card(page, "transit").locator(".details-toggle").click();
+  assert.match(await page.locator(".transport-label").first().innerText(), /バス/);
+  const opened = context.waitForEvent("page"); await page.locator('[data-planned="transit"]').click(); const popup = await opened; await popup.waitForLoadState();
+  const url = new URL(popup.url()); assert.equal(url.searchParams.get("origin"), "34.9858,135.7588"); assert.equal(url.searchParams.get("destination"), "34.9949,135.785"); assert.equal(url.searchParams.get("travelmode"), "transit"); assert.equal(await popup.evaluate(() => window.opener), null); await popup.close();
+  assert.equal(await page.evaluate(() => __geoCalls), 0);
+  await page.evaluate(() => { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText() { return Promise.reject(new Error("denied")); } } }); });
+  await card(page, "transit").locator("[data-copy-place]").first().click(); assert.match(await card(page, "transit").locator(".copy-status").first().innerText(), /選択してコピー/);
+  await page.evaluate(() => { navigator.clipboard.writeText = async text => { window.__copied = text; }; }); await card(page, "transit").locator("[data-copy-place]").first().click(); assert.equal(await page.evaluate(() => __copied), "京都駅\n京都市下京区");
+  await page.locator(".route-hit").focus(); await page.keyboard.press("Space"); assert.match(await page.locator(".leaflet-popup-content").innerText(), /京都駅.*清水寺.*バス.*10:00.*10:30/s);
+});
+
+for (const desktop of [false, true]) test(`Phase 4 visual ${desktop ? 1440 : 390}: saving panel, planned route, 200% text and keyboard`, async t => {
+  const { page } = await open(t, { desktop });
+  await page.locator(".offline-panel summary").focus(); await page.keyboard.press("Enter"); assert.equal(await page.locator(".save-offline").isVisible(), true);
+  await card(page, "transit").locator(".details-toggle").click(); await noOverflow(page); await page.screenshot({ path: `artifacts/phase4-${desktop ? "desktop" : "mobile"}.png` });
+  await page.addStyleTag({ content: "html { font-size: 32px !important; }" }); await page.evaluate(() => window.dispatchEvent(new Event("resize"))); await noOverflow(page); await page.screenshot({ path: `artifacts/phase4-${desktop ? "desktop" : "mobile"}-200.png` });
+});
+
+test("Phase 4 transport overlapping labels preserve focused label and missing From disables just planned operation", async t => {
+  const payload = structuredClone(fixture); payload.items.push({ ...payload.items.find(i => i.id === "transit"), id: "duplicate", title: "徒歩区間", transport: "Walk" }); payload.items.find(i => i.id === "transit").fromId = "missing";
+  const { page } = await open(t, { payload, initScript: geoSuccess });
+  await card(page, "transit").locator(".details-toggle").click(); assert.equal(await page.locator('[data-planned="transit"]').isDisabled(), false, "address fallback resolves missing-coordinate From");
+  await card(page, "duplicate").locator(".card-focus").click(); assert.equal(await page.locator('.transport-label').filter({ hasText: "徒歩" }).isVisible(), true);
+  const changed = structuredClone(payload); changed.places.find(p => p.id === "missing").address = "";
+  await page.route("**/api/refresh?*", route => route.fulfill({ contentType: "application/json", headers: { "X-Itinerary-Cache": "refreshed" }, body: JSON.stringify(changed) }));
+  await page.locator(".publish-button").click(); assert.equal(await page.locator('[data-planned="transit"]').isDisabled(), true); assert.match(await card(page, "transit").locator(".planned-reason").innerText(), /出発地/);
+  await page.locator(".location-panel summary").click(); await page.locator(".location-button").click(); assert.equal(await page.locator('[data-directions="transit"]').isDisabled(), false);
+});
 test("Phase 3 Flexible Block checklist: order/facts/focus/selection/filters/parent map time and touch", async t => {
   const { page } = await open(t, { payload: phase3Fixture, initScript: geoSuccess });
   assert.equal(await page.evaluate(() => __geoCalls), 0);

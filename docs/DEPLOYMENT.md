@@ -169,3 +169,15 @@ Workerを先に公開し、Developer portalのConnection設定 `Webhooks → Cre
 8. 本番で自由時間・3構造の寄り道・余裕・選択/フィルター/地図時間・既存操作・再取得・地図失敗時継続を確認します。現在地は固定テスト座標/権限エミュレーションを使い、経路popupを捕捉して外部通信を遮断します。全Phase 3サンプルをfalseへ戻して再取得し、API/画面/キャッシュの消滅と既存公開行hash一致を確認します。サンプルや追加列を削除/archiveしません。
 
 復旧はbaseline tagから別worktreeと新規recovery branchを作り、既存Node/npmでtest/browser/build後、同じWorkerへ再デプロイします。元checkoutをresetしません。追加列はbaseline codeが無視できるため保持します。確認済みCloudflare rollbackを使う場合も、smoke/サンプルfalse/既存値一致を再確認します。rollback後はPhase 3完了にしません。具体的なtag/version/コマンド/証拠は [PHASE3_REPORT.md](./PHASE3_REPORT.md) に記録します。
+# Phase 4 の運用・復旧
+
+Notion schema・Worker・DO・Secrets・公開slugは変更しません。Leafletは同一originへ同梱しLICENSEも配信します。背景タイルは永続保存しません。iPhone/Androidは対象ですが今回の検証は自動・本番Chromeまでです。
+
+1. `npm test`、`npm run test:browser`、`npm run test:pwa`、build、全JS/MJS構文、diff、390/1440/200%画像確認を行い、検証済みcommitをpushします。
+2. 現deployment/versionを記録し、`npm run build:recovery`でbaseline UIと復旧用SWを準備します。
+3. 既存設定のまま `wrangler deploy --dry-run` → `wrangler deploy`。本番で新規profile・明示保存・終了後圏外再起動・再接続・予定区間・保存解除を確認します。
+4. 通常の新しいUIは「更新があります」から切り替えます。他のタブを閉じてから操作してください。利用者の画面を自動reloadしません。
+
+緊急復旧は `node scripts/recovery-build.mjs phase4-baseline-20261012` で生成した `artifacts/phase4-recovery-wrangler.jsonc` を使い、同じ既存Workerへdry-run/deployします。復旧SWはnetwork-onlyへ切り替え、本アプリcache/DBを消去して登録解除し、開いている同一originの画面を旧UIへ再読み込みします。通常更新とは異なる緊急時の処理です。旧UIとcache/SW退役を確認します。閉じた端末には次回接続時の更新が必要です。Cloudflare旧versionへの切替だけでは既存SWを消せないため、復旧完了としません。元checkoutのresetや既存Notionデータの変更は不要です。
+
+保存期限は30×24時間。同じ `generatedAt` は通常GETが成功しても更新版ではありません。stale/throttled/5xx/timeoutで期限を延長しません。期限切れpayloadは起動/画面復帰/起動中に削除されますが、閉じたアプリで時刻指定の物理削除は保証しません。保存解除はアプリの「保存を解除して削除」を使用してください。

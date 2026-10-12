@@ -234,14 +234,27 @@ export function resolveDestination(node, places, focusedId = null, activeCandida
 }
 export function buildDirectionsUrl(location, destination) {
   if (!hasCoordinates(location) || !destination?.place) return null;
-  const { place, item } = destination;
-  const target = hasCoordinates(place) ? `${place.latitude},${place.longitude}` : place.address;
-  if (!target) return null;
+  return directionsUrl(location, destination.place, destination.item.transport);
+}
+export function routeEndpoint(place) {
+  return hasCoordinates(place) ? `${place.latitude},${place.longitude}` : typeof place?.address === "string" ? place.address.trim() : null;
+}
+export function resolvePlannedRoute(item, places) {
+  if (!item || structureOf(item) !== "Item" || item.type !== "Transit") return { reason: "予定区間は個々の移動項目で確認できます。" };
+  const from = places.get(item.fromId), to = places.get(item.toId);
+  if (!routeEndpoint(from)) return { reason: "出発地の座標・公開住所がありません。" };
+  if (!routeEndpoint(to)) return { reason: "到着地の座標・公開住所がありません。" };
+  const url = directionsUrl(from, to, item.transport);
+  return url ? { from, to, url } : { reason: "経路URLが2048文字を超えます。短い住所や座標を登録してください。" };
+}
+export function directionsUrl(from, to, transport) {
+  const origin = routeEndpoint(from), target = routeEndpoint(to);
+  if (!origin || !target) return null;
   const url = new URL("https://www.google.com/maps/dir/");
-  url.searchParams.set("api", "1"); url.searchParams.set("origin", `${location.latitude},${location.longitude}`); url.searchParams.set("destination", target);
-  const mode = { Walk: "walking", Train: "transit", Bus: "transit", Car: "driving" }[item.transport];
+  url.searchParams.set("api", "1"); url.searchParams.set("origin", origin); url.searchParams.set("destination", target);
+  const mode = { Walk: "walking", Train: "transit", Bus: "transit", Car: "driving" }[transport];
   if (mode) url.searchParams.set("travelmode", mode);
-  return url.href;
+  return url.href.length <= 2048 ? url.href : null;
 }
 export function locationIsStale(location, now = Date.now()) { return !location || now - location.timestamp > 300000; }
 export function focusedMapIds(id, roots, activeCandidates) {

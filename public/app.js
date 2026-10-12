@@ -1,6 +1,9 @@
 import { dayInZone, tripDays, chooseInitialDay, compareItems, formatDay, formatTime, formatDateTime, escapeHtml as esc, safeUrl, hasCoordinates, itemPlaces, buildMapsUrl, nearestItem } from "./model.mjs";
 import { structureOf, pruneState, flattenTree, selectionState, toggleSelection, defaultFilters, filtersActive, filterTree, initialTimeRange, shiftTimeRange, minuteLabel, mapNodes, focusedMapIds, descendantItems } from "./model.mjs";
 import { detourAssessment, resolveDestination, buildDirectionsUrl, locationIsStale } from "./model.mjs";
+import { resolvePlannedRoute } from "./model.mjs";
+import { publicSnapshot, readSaved, savePublic, deleteSaved } from "./offline.mjs";
+import { registerShell, removeShell, activateUpdate } from "./pwa.mjs";
 
 const app = document.querySelector("#app");
 const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -18,6 +21,9 @@ let timeline, itemsElement, mapPanel, statusElement, publishButton;
 // Deliberately memory-only; never part of payload, storage, URLs or telemetry.
 let currentLocation = null, locationLayer, locationBusy = false, locationMessage = "現在地は取得していません。";
 let locationExpiryTimer;
+let savedRecord = null, storageMessage = "", networkState = "通信を確認中", lastCache = "hit", offlineDisplay = false;
+let waitingRegistration, deferredInstall, storageBusy = false, requestSequence = 0, initialized = false, shellReady = false;
+const transportText = item => `${({ Walk: "🚶", Train: "🚆", Bus: "🚌", Car: "🚗", Ferry: "⛴" }[item.transport] || "↔")} ${label(item.transport) || "移動手段未設定"}`;
 
 function link(url, text) {
   const safe = safeUrl(url);
@@ -31,6 +37,14 @@ function setupShell() {
     <div class="sync-row"><p class="sync"></p><button class="publish-button" type="button">Notionから再取得</button></div>
     <p class="publish-status" role="status" aria-live="polite"></p></header>
     <nav class="days" aria-label="日付"></nav>
+    <details class="offline-panel"><summary>端末保存とホーム画面</summary>
+      <p class="offline-status" role="status" aria-live="polite"></p>
+      <button type="button" class="save-offline">この端末に保存</button>
+      <button type="button" class="delete-offline" hidden>保存を解除して削除</button>
+      <button type="button" class="update-app" hidden>更新があります・切り替える</button>
+      <button type="button" class="install-app" hidden>ホーム画面に追加</button>
+      <p>保存後は30日間、旅程・地点・概略線を圏外で参照できます。背景地図は通信が必要です。インストールだけでは旅程は保存されません。iPhoneは共有メニューから「ホーム画面に追加」を選べます。</p>
+      <p class="storage-message" role="status" aria-live="polite"></p></details>
     <details class="location-panel"><summary>現在地と外部経路</summary>
       <button type="button" class="location-button">現在地を表示</button>
       <p class="location-status" role="status" aria-live="polite">現在地は取得していません。</p>
@@ -65,6 +79,16 @@ function setupShell() {
   mapPanel = app.querySelector(".map-panel"); statusElement = app.querySelector(".publish-status");
   publishButton = app.querySelector(".publish-button");
   publishButton.addEventListener("click", refresh);
+  app.querySelector(".save-offline").addEventListener("click", enableSaving);
+  app.querySelector(".delete-offline").addEventListener("click", disableSaving);
+  app.querySelector(".update-app").addEventListener("click", async () => {
+    const reload = () => location.reload();
+    navigator.serviceWorker.addEventListener("controllerchange", reload, { once: true });
+    if (waitingRegistration && await activateUpdate(waitingRegistration)) {
+      storageMessage = "アプリを更新しています…"; paintOffline();
+    } else { navigator.serviceWorker.removeEventListener("controllerchange", reload); storageMessage = "他のタブを閉じてから更新を再試行してください。"; paintOffline(); }
+  });
+  app.querySelector(".install-app").addEventListener("click", async () => { if (deferredInstall) { await deferredInstall.prompt(); deferredInstall = null; paintOffline(); } });
   app.querySelector(".location-button").addEventListener("click", requestLocation);
   setupComparisonControls();
   app.querySelector(".collapse-all").addEventListener("click", () => {
@@ -162,12 +186,15 @@ function cost(value, currency) {
 function details(item) {
   const locationDetails = itemPlaces(item, places).map((place, index) => `<section class="place-details"><h3>${item.type === "Transit" ? (index === 0 ? "出発地：" : "到着地：") : "場所："}${esc(place.name)}</h3>
     ${place.address ? `<p>${esc(place.address)}</p>` : ""}${place.notes ? `<p class="notes">${esc(place.notes)}</p>` : ""}
-    <div class="actions">${link(place.website, "施設のWebサイト")}${link(place.mapsUrl, "場所の地図")}${place.phone && /^[+\d()\s-]+$/.test(place.phone) ? `<a href="tel:${esc(place.phone.replace(/[^+\d]/g, ""))}">電話 ${esc(place.phone)}</a>` : ""}</div></section>`).join("");
+    <div class="actions">${link(place.website, "施設のWebサイト")}${link(place.mapsUrl, "場所の地図")}${place.phone && /^[+\d()\s-]+$/.test(place.phone) ? `<a href="tel:${esc(place.phone.replace(/[^+\d]/g, ""))}">電話 ${esc(place.phone)}</a>` : ""}</div>
+    <button type="button" data-copy-place="${esc(place.id)}">地点名・住所をコピー</button><p class="copy-status" role="status"></p></section>`).join("");
+  const planned = resolvePlannedRoute(item, places);
   return `${locationDetails}${item.notes ? `<p class="notes">${esc(item.notes)}</p>` : ""}
     ${item.openingHours ? `<p>営業時間：${esc(item.openingHours)}</p>` : ""}
     ${Number.isFinite(item.durationMinutes) ? `<p>目安所要時間：${esc(item.durationMinutes)}分</p>` : ""}
     ${Number.isFinite(item.totalCost) ? `<p>全体費用：${cost(item.totalCost, item.currency)}</p>` : ""}${Number.isFinite(item.perPersonCost) ? `<p>1人あたり：${cost(item.perPersonCost, item.currency)}</p>` : ""}
     <div class="actions">${link(buildMapsUrl(item, places), "地図・経路を開く")}${link(item.reservationUrl, "予約を開く")}</div>
+    ${item.type === "Transit" && structureOf(item) === "Item" ? `<div class="planned-section"><p>Google Mapsへ登録済みの出発地・到着地を送信します。外部サービスには通信が必要です。</p><button type="button" data-planned="${esc(item.id)}" ${planned.url ? "" : "disabled"}>Google Mapsで予定区間を開く</button><p class="planned-reason">${esc(planned.reason || `${planned.from.name} → ${planned.to.name} · ${transportText(item)}`)}</p></div>` : ""}
     <div class="directions-section"><p>第三者サービスのGoogle Mapsへ現在地と目的地を送信します。</p><button type="button" class="directions-button" data-directions="${esc(item.id)}" disabled>現在地からの経路を開く</button><p class="directions-reason"></p></div>
     ${!locationDetails && !item.notes && !buildMapsUrl(item, places) && !safeUrl(item.reservationUrl) ? "<p>追加情報はありません。</p>" : ""}`;
 }
@@ -245,6 +272,15 @@ function renderItems({ fit = true } = {}) {
     if (!url) return;
     try { window.open(url, "_blank", "noopener,noreferrer"); }
     catch { button.nextElementSibling.textContent = "外部経路を開けませんでした。ブラウザの設定を確認して再試行してください。"; }
+  }));
+  itemsElement.querySelectorAll("[data-planned]").forEach(button => button.addEventListener("click", () => {
+    const route = resolvePlannedRoute(tree.byId.get(button.dataset.planned), places);
+    if (route.url) window.open(route.url, "_blank", "noopener,noreferrer");
+  }));
+  itemsElement.querySelectorAll("[data-copy-place]").forEach(button => button.addEventListener("click", async () => {
+    const place = places.get(button.dataset.copyPlace), text = [place.name, place.address].filter(Boolean).join("\n");
+    try { await navigator.clipboard.writeText(text); button.nextElementSibling.textContent = "コピーしました。"; }
+    catch { button.nextElementSibling.textContent = "コピーできませんでした。上の地点名・住所を選択してコピーしてください。"; }
   }));
   setupCandidates(); updateComparisonStatus(); renderTimeControls(); renderMap(fit); paintFocus();
 }
@@ -393,6 +429,20 @@ function paintFocus() {
       layer.getElement()?.classList.toggle("selected-route", chosen); layer.getElement()?.setAttribute("aria-pressed", String(active));
     }
   }
+  paintTransportLabels(focused);
+}
+
+function paintTransportLabels(focused) {
+  const entries = [...itemLayers].flatMap(([id, layers]) => layers.filter(layer => layer.routeLabel).map(layer => ({ id, marker: layer.routeLabel }))).sort((a, b) => Number(focused.has(b.id)) - Number(focused.has(a.id)));
+  const occupied = [];
+  for (const { id, marker } of entries) {
+    const element = marker.getElement(); if (!element) continue;
+    element.style.display = "";
+    const rect = element.getBoundingClientRect(), overlaps = occupied.some(other => rect.left < other.right && rect.right > other.left && rect.top < other.bottom && rect.bottom > other.top);
+    element.style.display = overlaps && !focused.has(id) ? "none" : "";
+    marker.setZIndexOffset(focused.has(id) ? 1500 : 500);
+    if (element.style.display !== "none") occupied.push(rect);
+  }
 }
 
 function focusItem(id, source) {
@@ -457,7 +507,10 @@ function renderMap(fit = true) {
       const coordinates = locations.map((place) => [place.latitude, place.longitude]);
       const visual = L.polyline(coordinates, { color: "#163a35", weight: 3, dashArray: "8 8", interactive: false }).addTo(layerGroup);
       const hit = L.polyline(coordinates, { color: "transparent", weight: 44, className: "route-hit" }).addTo(layerGroup);
-      hit.routeVisual = visual; hit.bindPopup(`<strong>${esc(item.title)}</strong><br>${esc(formatTime(item.start, data.trip.timezone))}<br>概略線（実経路ではありません）`, { autoPan: false });
+      hit.routeVisual = visual; hit.bindPopup(`<strong>${esc(item.title)}</strong><br>${esc(locations[0].name)} → ${esc(locations[1].name)}<br>${esc(transportText(item))}<br>${esc(formatTime(item.start, data.trip.timezone))}${item.end ? ` – ${esc(formatTime(item.end, data.trip.timezone))}` : ""}${Number.isFinite(item.durationMinutes) ? ` · ${item.durationMinutes}分` : ""}<br>概略線（実経路ではありません）`, { autoPan: false });
+      const midpoint = coordinates[0].map((n, index) => (n + coordinates[1][index]) / 2);
+      const routeLabel = L.marker(midpoint, { interactive: false, keyboard: false, icon: L.divIcon({ className: "transport-label", html: `<span>${esc(transportText(item))}</span>`, iconSize: [136, 30], iconAnchor: [68, 15] }) }).addTo(layerGroup);
+      hit.routeLabel = routeLabel;
       const activate = () => { if (mobile() && state.mapPanelMode === "expanded") setMapMode("standard"); focusItem(item.id, "map"); };
       hit.on("click", activate);
       const element = hit.getElement(); element.setAttribute("tabindex", "0"); element.setAttribute("role", "button"); element.setAttribute("aria-label", `${item.title}の概略線にフォーカス`);
@@ -487,21 +540,23 @@ function fitDay() {
   needsFit = false;
   map.fitBounds(bounds, { padding: [35, 35], maxZoom: 14, animate: !reducedMotion() });
 }
-function mapStatus(message) { const element = app.querySelector(".map-status"); element.textContent = message; element.hidden = !message; }
+function mapStatus(message) { const element = app.querySelector(".map-status"); if (!element) return; message ||= networkState === "圏外・通信失敗" ? "背景地図には通信が必要です。保存した地点・概略線を表示しています。" : ""; element.textContent = message; element.hidden = !message; }
 
 async function loadMap() {
   try {
     if (!window.L) await new Promise((resolve, reject) => {
-      const script = document.createElement("script"); script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"; script.async = true;
+      const script = document.createElement("script"); script.src = new URL("./leaflet.js", import.meta.url).href; script.async = true;
       const timeout = setTimeout(() => reject(new Error("timeout")), 8000);
       script.onload = () => { clearTimeout(timeout); resolve(); }; script.onerror = () => { clearTimeout(timeout); reject(new Error("load")); }; document.head.append(script);
     });
+    if (!initialized) return;
     map = L.map("map", { zoomControl: true, zoomAnimation: !reducedMotion(), fadeAnimation: !reducedMotion(), markerZoomAnimation: !reducedMotion() }).setView([35.6812, 139.7671], 11);
     const tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
     let tileErrors = 0;
     tiles.on("tileerror", () => { tileErrors++; mapStatus("背景地図を読み込めません。地点・概略線と旅程、外部地図リンクを利用できます。"); });
     tiles.on("loading", () => { tileErrors = 0; }); tiles.on("load", () => { if (!tileErrors && bounds.length) mapStatus(""); });
     layerGroup = L.layerGroup().addTo(map); locationLayer = L.layerGroup().addTo(map); renderMap(); paintFocus(); paintLocation();
+    map.on("zoomend moveend", () => paintTransportLabels(focusedMapIds(state.focusedItemId, visibleRoots, state.activeCandidateByGroup)));
     matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", () => {
       map.options.zoomAnimation = !reducedMotion(); map.options.fadeAnimation = !reducedMotion(); map.options.markerZoomAnimation = !reducedMotion();
     });
@@ -525,11 +580,14 @@ async function refresh() {
   refreshing = true; updateCooldown(); syncStatus("Notionから更新しています…");
   try {
     const response = await fetch(`/api/refresh?slug=${encodeURIComponent(data.trip.slug)}`, { method: "POST", cache: "no-store" });
+    if (response.status === 404) { await deleteSaved(); savedRecord = null; offlineDisplay = false; showLoadError("この旅行は公開されていません。端末の保存旅程を削除しました。"); return; }
     if (!response.ok) throw new Error("refresh");
-    const next = await response.json();
+    const next = publicSnapshot(await response.json());
+    lastCache = response.headers.get("X-Itinerary-Cache") || "hit";
     if (!["stale", "throttled"].includes(response.headers.get("X-Itinerary-Cache"))) {
       const keyboard = document.activeElement === publishButton, scrollTop = timeline.scrollTop;
-      programmaticScroll = true; updateData(next); timeline.scrollTop = scrollTop;
+      programmaticScroll = true; if (Date.parse(next.generatedAt) >= Date.parse(data.generatedAt)) updateData(next); timeline.scrollTop = scrollTop;
+      await persistNext(next, response); offlineDisplay = false; networkState = "オンライン"; paintOffline();
       if (keyboard) publishButton.focus({ preventScroll: true }); setTimeout(() => { programmaticScroll = false; }, 200);
     }
     applySyncHeader(response, true); cooldownUntil = Date.now() + 60000;
@@ -539,25 +597,109 @@ async function refresh() {
 
 async function start() {
   app.setAttribute("aria-busy", "true");
-  try {
-    const response = await fetch("/api/itinerary", { cache: "no-store" });
-    if (!response.ok) throw new Error("itinerary");
-    const next = await response.json(); setupShell(); updateData(next); applySyncHeader(response, false);
-    void loadMap(); setInterval(() => { updateCooldown(); paintLocationStatus(); }, 1000);
-  } catch {
-    app.setAttribute("aria-busy", "false");
-    app.innerHTML = '<section class="error" role="alert"><h1>旅程を読み込めませんでした。</h1><p>通信状況を確認して、もう一度お試しください。</p><button type="button" class="retry">再試行</button></section>';
-    app.querySelector(".retry").addEventListener("click", start);
-  }
+  try { savedRecord = await readSaved(location.origin); } catch { storageMessage = "保存領域を読めませんでした。オンラインで再試行してください。"; }
+  if (savedRecord?.payload) { showData(savedRecord.payload); offlineDisplay = true; paintOffline(); }
+  if (savedRecord) void prepareShell().catch(() => {});
+  await fetchLatest();
 }
 void start();
+
+function showData(next) {
+  if (!initialized) { setupShell(); initialized = true; updateData(next); void loadMap(); }
+  else updateData(next);
+  paintOffline();
+}
+function showLoadError(message = "通信状況を確認して、もう一度お試しください。保存済みの旅程がないため圏外では復元できません。") {
+  map?.remove(); map = null; initialized = false; data = null;
+  app.className = ""; app.setAttribute("aria-busy", "false");
+  app.innerHTML = `<section class="error" role="alert"><h1>旅程を読み込めませんでした。</h1><p>${esc(message)}</p><button type="button" class="retry">再試行</button><button type="button" class="delete-error">保存を解除して削除</button><p class="storage-message" role="status"></p></section>`;
+  app.querySelector(".retry").addEventListener("click", start);
+  app.querySelector(".delete-error").addEventListener("click", disableSaving);
+}
+async function fetchLatest() {
+  const sequence = ++requestSequence;
+  try {
+    const response = await fetch("/api/itinerary", { cache: "no-store", signal: AbortSignal.timeout(3000) });
+    if (sequence !== requestSequence) return;
+    if (response.status === 404) {
+      await deleteSaved(); savedRecord = null; offlineDisplay = false;
+      showLoadError("この旅行は公開されていません。端末の保存旅程を削除しました。"); return;
+    }
+    if (!response.ok) throw new Error("itinerary");
+    const next = publicSnapshot(await response.json());
+    if (sequence !== requestSequence) return;
+    lastCache = response.headers.get("X-Itinerary-Cache") || "hit";
+    if (!data || Date.parse(next.generatedAt) >= Date.parse(data.generatedAt)) { showData(next); offlineDisplay = false; }
+    networkState = "オンライン"; applySyncHeader(response, false); await persistNext(next, response); paintOffline();
+  } catch {
+    if (sequence !== requestSequence) return;
+    networkState = "圏外・通信失敗";
+    if (initialized) { syncStatus("通信できません。最後に取得した旅程を表示しています。最新でない可能性があります。", true); paintOffline(); mapStatus(""); }
+    else showLoadError(savedRecord ? "保存期限が切れています。オンラインで新しい同期版を取得してください。" : undefined);
+  }
+}
+async function persistNext(next, response) {
+  lastCache = response.headers.get("X-Itinerary-Cache") || "hit";
+  if (!savedRecord) return;
+  try { savedRecord = await savePublic(next, location.origin, lastCache); }
+  catch { storageMessage = "最新版を端末に保存できませんでした。保存容量・ブラウザ設定を確認してください。"; }
+}
+async function prepareShell() {
+  try { await registerShell(registration => { waitingRegistration = registration; paintOffline(); }); shellReady = true; paintOffline(); }
+  catch (error) { storageMessage = error.message; paintOffline(); throw error; }
+}
+async function enableSaving() {
+  if (storageBusy || !data) return;
+  storageBusy = true; storageMessage = "起動用ファイルと公開旅程を保存しています…"; paintOffline();
+  try {
+    if (["stale", "throttled"].includes(lastCache)) throw new Error("正常な同期版を取得してから保存してください。");
+    savedRecord = await savePublic(data, location.origin, lastCache, true);
+    await prepareShell();
+    storageMessage = "端末保存を有効にしました。次の新しい同期版から自動更新します。";
+  } catch (error) { storageMessage = error.message; }
+  finally { storageBusy = false; paintOffline(); }
+}
+async function disableSaving() {
+  if (storageBusy) return;
+  storageBusy = true;
+  try { await deleteSaved(); savedRecord = null; await removeShell(); waitingRegistration = null; shellReady = false; storageMessage = "端末の保存旅程・設定・起動用ファイルを削除しました。"; }
+  catch (error) { storageMessage = error.message; }
+  finally { storageBusy = false; paintOffline(); }
+}
+function paintOffline() {
+  const status = app.querySelector(".offline-status"), message = app.querySelector(".storage-message");
+  if (message) message.textContent = storageMessage;
+  if (!status) return;
+  status.textContent = `${networkState} · ${savedRecord?.payload ? `旅程保存済み${shellReady ? "・オフライン起動準備済み" : "・起動準備を確認中"} · 保存 ${new Date(savedRecord.firstSavedAt).toLocaleString("ja-JP")} · 期限 ${new Date(savedRecord.expiresAt).toLocaleString("ja-JP")}` : savedRecord ? "保存期限切れ。新しい同期版を取得してください。" : "端末未保存。圏外復元には事前の保存が必要です。"}`;
+  app.querySelector(".save-offline").disabled = storageBusy;
+  app.querySelector(".save-offline").textContent = savedRecord ? "保存状態を再確認" : "この端末に保存";
+  app.querySelector(".delete-offline").hidden = !savedRecord && !shellReady && !navigator.serviceWorker?.controller;
+  app.querySelector(".delete-offline").disabled = storageBusy;
+  app.querySelector(".update-app").hidden = !waitingRegistration?.waiting;
+  app.querySelector(".install-app").hidden = !deferredInstall;
+}
+async function checkExpiration() {
+  if (!savedRecord || storageBusy) return;
+  try {
+    savedRecord = await readSaved(location.origin);
+    if (!savedRecord?.payload && offlineDisplay) { offlineDisplay = false; showLoadError("端末の旅程保存期限が切れたか、保存が解除されました。オンラインで新しい同期版を取得してください。"); }
+    else paintOffline();
+  } catch { storageMessage = "保存領域を確認できません。再試行してください。"; paintOffline(); }
+}
+window.addEventListener("online", () => { void fetchLatest(); });
+window.addEventListener("offline", () => { networkState = "圏外・通信失敗"; paintOffline(); if (map) mapStatus(""); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) void checkExpiration(); });
+window.addEventListener("beforeinstallprompt", event => { event.preventDefault(); deferredInstall = event; paintOffline(); });
+navigator.serviceWorker?.addEventListener("message", event => { if (event.data?.type === "INSTALL_ERROR") { storageMessage = `起動用ファイルを保存できませんでした。オンラインで再試行してください。${event.data.reason || ""}`; paintOffline(); } });
+setInterval(() => { if (initialized) { updateCooldown(); paintLocationStatus(); } if (savedRecord?.payload && Date.now() >= savedRecord.expiresAt) void checkExpiration(); }, 1000);
 
 function paintDirections() {
   if (!tree) return;
   itemsElement.querySelectorAll("[data-directions]").forEach(button => {
     const destination = resolveDestination(tree.byId.get(button.dataset.directions), places, state.focusedItemId, state.activeCandidateByGroup);
-    const reason = !destination ? "目的地を解決できません。場所または到着地の座標・公開住所を確認してください。" : !currentLocation ? "「現在地を表示」で取得してください。" : locationIsStale(currentLocation) ? "現在地が古い情報です。「現在地を更新」で再取得してください。" : "Google Mapsを新しいタブで開きます。";
-    button.disabled = !destination || locationIsStale(currentLocation); button.nextElementSibling.textContent = reason;
+    const tooLong = destination && currentLocation && !buildDirectionsUrl(currentLocation, destination);
+    const reason = !destination ? "目的地を解決できません。場所または到着地の座標・公開住所を確認してください。" : !currentLocation ? "「現在地を表示」で取得してください。" : locationIsStale(currentLocation) ? "現在地が古い情報です。「現在地を更新」で再取得してください。" : tooLong ? "経路URLが2048文字を超えます。短い住所や座標を登録してください。" : "Google Mapsを新しいタブで開きます。";
+    button.disabled = !destination || locationIsStale(currentLocation) || tooLong; button.nextElementSibling.textContent = reason;
   });
 }
 function paintLocationStatus() {
