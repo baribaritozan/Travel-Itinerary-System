@@ -156,3 +156,16 @@ Workerを先に公開し、Developer portalのConnection設定 `Webhooks → Cre
 復旧点のbranch/tagと本番versionを更新前に記録する。復旧にはbaseline tagから新しいworktree/復旧branchを作り、検証・build後、既存Workerへデプロイする。元checkoutをresetしない。追加した任意プロパティはbaseline codeが無視できるので残す。検証用の `[Phase2 Sample]` 行は最終Publish=falseに戻し、再取得後の本番API/画面から消えたことを確認する。
 
 このタスクで実施したスキーマ追加・サンプル・本番version・smoke結果は [PHASE2_REPORT.md](./PHASE2_REPORT.md) に記録する。既存行・既存プロパティの削除、名前/型変更、値clearは行わない。
+
+## Phase 3 へ更新する場合
+
+1. 変更前に専用branch、baseline commit、annotated tagを作ってoriginへpushし、対象DB、既存公開行のsanitized hash、本番deployment/versionとsmokeを記録します。既存worktreeをreset/stashしません。
+2. 既存Structure Selectの全optionを保持して英語の正規値 `Flexible Block` を追加します。`Opening Hours`（Rich Text）、`Additional Duration Minutes`（Number）を追加します。`Detour For`は同じItinerary Items、`Rejoin Place`はPlacesへのRelationです。どちらも一方向（RESTではsingle_property）とし、0または1件。Notion UIで可能なら1ページ制限を設定します。同名プロパティがある場合は型・Relation先・方向を確認して再利用し、不一致なら変更せず停止します。[NotionのRelation schema](https://developers.notion.com/reference/property-object)を参照。
+3. 自由時間はFlexible Block自身に開始・終了Periodが必須、直接子はItemのみ。子はPeriodなしで登録でき、Order→Status→名称の候補一覧になります。親の場所・費用・状態は暗黙継承しません。Alternative Group→Series→Flexible Block→Itemまで許可します。空コンテナ、循環、禁止階層等は同期エラーです。
+4. 寄り道ルートのStructureはItem/Series/Alternative Group。Parentを空にし、Detour Forを同じ旅行の公開Item/Transitへ設定します。対象TransitをParentにしません。追加所要時間は0以上、復帰地点は任意で、省略時は対象のTo。子孫のDetour Forと寄り道内Flexible Blockは禁止。Periodなしの寄り道末端ItemはDuration Minutes（0以上）が必須です。通常ItemのPeriod要件は変わりません。
+5. 現在地はHTTPSかつ対応ブラウザで明示操作時に一回だけ取得します。メモリ内だけで保持し、再読み込みで破棄、5分超で古い情報とします。保存/ログ/分析/サーバー送信/継続追跡を追加しないでください。Google Maps送信は第三者送信表示のある経路操作時だけです。固定HTTPS Directions URL、許可パラメーターとnoopenerを維持してください。
+6. 全既存・追加テスト、build、全JS/MJS構文、diffチェック、390×844/1440×900/200%画像確認を成功させてcommit/pushします。そのcommitで既存wrangler.jsoncを使い `wrangler deploy --dry-run` → `wrangler deploy`。Worker/account/environment/domain/Secretを新設しません。
+7. 検証専用の新規 `[Phase3 Sample]` はPublish=falseで作り、関係を新規サンプル内で完結させます。明示的な将来日付を使用します。本番smoke時のみallowlist/try-finallyで短時間公開し、既存60秒クールダウンを守って再取得します。既存行（Phase 2サンプルも含む）は変更しません。
+8. 本番で自由時間・3構造の寄り道・余裕・選択/フィルター/地図時間・既存操作・再取得・地図失敗時継続を確認します。現在地は固定テスト座標/権限エミュレーションを使い、経路popupを捕捉して外部通信を遮断します。全Phase 3サンプルをfalseへ戻して再取得し、API/画面/キャッシュの消滅と既存公開行hash一致を確認します。サンプルや追加列を削除/archiveしません。
+
+復旧はbaseline tagから別worktreeと新規recovery branchを作り、既存Node/npmでtest/browser/build後、同じWorkerへ再デプロイします。元checkoutをresetしません。追加列はbaseline codeが無視できるため保持します。確認済みCloudflare rollbackを使う場合も、smoke/サンプルfalse/既存値一致を再確認します。rollback後はPhase 3完了にしません。具体的なtag/version/コマンド/証拠は [PHASE3_REPORT.md](./PHASE3_REPORT.md) に記録します。

@@ -1,5 +1,6 @@
 import { dayInZone, tripDays, chooseInitialDay, compareItems, formatDay, formatTime, formatDateTime, escapeHtml as esc, safeUrl, hasCoordinates, itemPlaces, buildMapsUrl, nearestItem } from "./model.mjs";
 import { structureOf, pruneState, flattenTree, selectionState, toggleSelection, defaultFilters, filtersActive, filterTree, initialTimeRange, shiftTimeRange, minuteLabel, mapNodes, focusedMapIds, descendantItems } from "./model.mjs";
+import { detourAssessment, resolveDestination, buildDirectionsUrl, locationIsStale } from "./model.mjs";
 
 const app = document.querySelector("#app");
 const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -14,6 +15,9 @@ let itemLayers = new Map(), markers = [], bounds = [];
 let scrollTimer, programmaticScroll = false, cooldownUntil = 0, refreshing = false, needsFit = false;
 let suppressScrollFocus = false;
 let timeline, itemsElement, mapPanel, statusElement, publishButton;
+// Deliberately memory-only; never part of payload, storage, URLs or telemetry.
+let currentLocation = null, locationLayer, locationBusy = false, locationMessage = "現在地は取得していません。";
+let locationExpiryTimer;
 
 function link(url, text) {
   const safe = safeUrl(url);
@@ -27,6 +31,10 @@ function setupShell() {
     <div class="sync-row"><p class="sync"></p><button class="publish-button" type="button">Notionから再取得</button></div>
     <p class="publish-status" role="status" aria-live="polite"></p></header>
     <nav class="days" aria-label="日付"></nav>
+    <details class="location-panel"><summary>現在地と外部経路</summary>
+      <button type="button" class="location-button">現在地を表示</button>
+      <p class="location-status" role="status" aria-live="polite">現在地は取得していません。</p>
+      <p>現在地はこのページのメモリ内だけで扱い、再読み込みで破棄します。経路操作時にGoogle Mapsへ現在地と目的地を送信します。</p></details>
     <details class="filter-panel"><summary>予定を絞り込む</summary><div class="filter-fields"></div>
       <button type="button" class="reservation-shortcut" aria-pressed="false">予約が必要だが未完了</button>
       <label class="check-label"><input type="checkbox" class="selected-only">選択項目のみ表示</label>
@@ -57,10 +65,12 @@ function setupShell() {
   mapPanel = app.querySelector(".map-panel"); statusElement = app.querySelector(".publish-status");
   publishButton = app.querySelector(".publish-button");
   publishButton.addEventListener("click", refresh);
+  app.querySelector(".location-button").addEventListener("click", requestLocation);
   setupComparisonControls();
   app.querySelector(".collapse-all").addEventListener("click", () => {
     state.expandedItemIds.clear();
     itemsElement.querySelectorAll(".details-toggle").forEach((button) => setExpanded(button, false));
+    renderMap(false); paintFocus();
   });
   mapPanel.querySelectorAll(".panel-modes button").forEach((button) => button.addEventListener("click", () => setMapMode(button.dataset.mode)));
   app.querySelector(".show-all").addEventListener("click", fitDay);
@@ -154,8 +164,12 @@ function details(item) {
     ${place.address ? `<p>${esc(place.address)}</p>` : ""}${place.notes ? `<p class="notes">${esc(place.notes)}</p>` : ""}
     <div class="actions">${link(place.website, "施設のWebサイト")}${link(place.mapsUrl, "場所の地図")}${place.phone && /^[+\d()\s-]+$/.test(place.phone) ? `<a href="tel:${esc(place.phone.replace(/[^+\d]/g, ""))}">電話 ${esc(place.phone)}</a>` : ""}</div></section>`).join("");
   return `${locationDetails}${item.notes ? `<p class="notes">${esc(item.notes)}</p>` : ""}
+    ${item.openingHours ? `<p>営業時間：${esc(item.openingHours)}</p>` : ""}
+    ${Number.isFinite(item.durationMinutes) ? `<p>目安所要時間：${esc(item.durationMinutes)}分</p>` : ""}
     ${Number.isFinite(item.totalCost) ? `<p>全体費用：${cost(item.totalCost, item.currency)}</p>` : ""}${Number.isFinite(item.perPersonCost) ? `<p>1人あたり：${cost(item.perPersonCost, item.currency)}</p>` : ""}
-    <div class="actions">${link(buildMapsUrl(item, places), "地図・経路を開く")}${link(item.reservationUrl, "予約を開く")}</div>${!locationDetails && !item.notes && !buildMapsUrl(item, places) && !safeUrl(item.reservationUrl) ? "<p>追加情報はありません。</p>" : ""}`;
+    <div class="actions">${link(buildMapsUrl(item, places), "地図・経路を開く")}${link(item.reservationUrl, "予約を開く")}</div>
+    <div class="directions-section"><p>第三者サービスのGoogle Mapsへ現在地と目的地を送信します。</p><button type="button" class="directions-button" data-directions="${esc(item.id)}" disabled>現在地からの経路を開く</button><p class="directions-reason"></p></div>
+    ${!locationDetails && !item.notes && !buildMapsUrl(item, places) && !safeUrl(item.reservationUrl) ? "<p>追加情報はありません。</p>" : ""}`;
 }
 
 function cardHtml(item, index, siblings, nested = false) {
@@ -163,26 +177,30 @@ function cardHtml(item, index, siblings, nested = false) {
     const at = item.type === "Transit" ? item.fromId : item.placeId;
     const connection = next && at && at === (next.type === "Transit" ? next.fromId : next.placeId) ? "same-place" : "moving";
     const point = ["Sightseeing", "Stay", "Meeting", "Place", "観光", "宿泊", "集合"].includes(item.type);
-    const time = formatTime(item.start, data.trip.timezone);
-    const end = item.end ? ` – ${formatTime(item.end, data.trip.timezone)}` : item.durationMinutes ? ` · ${esc(item.durationMinutes)}分` : "";
+    const time = item.start ? formatTime(item.start, data.trip.timezone) : "時刻未定";
+    const end = item.end ? ` – ${formatTime(item.end, data.trip.timezone)}` : Number.isFinite(item.durationMinutes) ? ` · ${esc(item.durationMinutes)}分` : "";
     const missing = itemPlaces(item, places).filter(hasCoordinates).length < (item.type === "Transit" ? 2 : 1);
     const container = structureOf(item) !== "Item";
     const selection = selectionState(tree.byId.get(item.id), state.selectedIds);
-    const children = item.structure === "Alternative Group" ? candidateHtml(item) : item.structure === "Series" ? `<div class="series-timeline" aria-label="${esc(item.title)}の子タイムライン">${item.children.map((child, i) => cardHtml(child, i, item.children, true)).join("")}</div>` : "";
+    const flexibleChild = tree.byId.get(item.parentId)?.structure === "Flexible Block";
+    const children = item.structure === "Alternative Group" ? candidateHtml(item) : item.structure === "Series" ? `<div class="series-timeline" aria-label="${esc(item.title)}の子タイムライン">${item.children.map((child, i) => cardHtml(child, i, item.children, true)).join("")}</div>` : item.structure === "Flexible Block" ? `<div class="flexible-candidates" role="group" aria-label="${esc(item.title)}の時刻未定候補">${item.children.map((child, i) => cardHtml(child, i, item.children, true)).join("")}</div>` : "";
+    const detours = item.detours?.length ? `<section class="detour-routes" aria-label="${esc(item.title)}の寄り道"><h3>任意の寄り道</h3>${item.detours.map((child, i) => cardHtml(child, i, item.detours, true)).join("")}</section>` : "";
+    const detourInfo = item.detourForId ? `<div class="detour-facts"><p>追加所要時間：${esc(item.additionalDurationMinutes)}分</p><p>復帰地点：${esc(places.get(item.rejoinPlaceId || tree.byId.get(item.detourForId)?.toId)?.name || "未設定")}</p><p data-detour-assessment="${esc(item.id)}">${esc(detourAssessment(item, tree.byId.get(item.detourForId), tree, state.activeCandidateByGroup).text)}</p><p>登録値による目安です。交通状況・営業時間・待ち時間は保証しません。</p></div>` : "";
     return `<article class="item ${connection} ${nested ? "nested-item" : ""} ${container ? "container-item" : ""}" data-id="${esc(item.id)}" aria-label="${esc(item.title)}">
-      <button type="button" class="timeline-node ${point ? "point" : "activity"}" data-focus="${esc(item.id)}" aria-label="${esc(item.title)}にフォーカス（${point ? "地点" : "活動"}）" aria-pressed="false"><span aria-hidden="true"></span></button>
+      ${flexibleChild ? "" : `<button type="button" class="timeline-node ${point ? "point" : "activity"}" data-focus="${esc(item.id)}" aria-label="${esc(item.title)}にフォーカス（${point ? "地点" : "活動"}）" aria-pressed="false"><span aria-hidden="true"></span></button>`}
       <button type="button" class="card-focus" data-focus="${esc(item.id)}" aria-pressed="false">
         <span class="time"><time datetime="${esc(item.start)}">${esc(time)}</time>${end}</span><span class="item-title">${esc(item.title)}</span>
-        <span class="badges">${[container ? (item.structure === "Series" ? "系列" : "候補グループ") : null, item.type, item.status, item.transport, item.reservationStatus].filter(Boolean).map((value) => `<span class="badge">${esc(label(value))}</span>`).join("")}</span>
+        <span class="badges">${[container ? ({ Series: "系列", "Flexible Block": "自由時間", "Alternative Group": "候補グループ" }[item.structure]) : null, item.type, item.status, item.transport, item.reservationStatus].filter(Boolean).map((value) => `<span class="badge">${esc(label(value))}</span>`).join("")}</span>
         ${Number.isFinite(item.perPersonCost) || Number.isFinite(item.totalCost) ? `<span class="summary-cost">${Number.isFinite(item.perPersonCost) ? `1人 ${cost(item.perPersonCost, item.currency)}` : `全体 ${cost(item.totalCost, item.currency)}`}</span>` : ""}
       </button>
       ${missing && !container ? '<p class="location-warning">地図に表示できる位置情報がありません。</p>' : ""}
       ${item.type === "Transit" ? '<p class="route-note">地図の破線は概略線です。</p>' : ""}
       ${item.parentId && tree.byId.get(item.parentId)?.structure === "Alternative Group" ? comparisonHtml(item) : ""}
+      ${detourInfo}
       <button type="button" class="details-toggle" aria-expanded="${expanded}" aria-controls="details-${esc(item.id)}">${expanded ? "詳細を閉じる" : "詳細を開く"}</button>
-      <div class="item-details" id="details-${esc(item.id)}" ${expanded ? "" : "hidden"}>${details(item)}${item.structure === "Series" ? children : ""}</div>
+      <div class="item-details" id="details-${esc(item.id)}" ${expanded ? "" : "hidden"}>${details(item)}${item.structure === "Series" ? children : ""}${detours}</div>
       <button type="button" class="select-toggle" role="checkbox" aria-checked="${selection}" data-select="${esc(item.id)}">${selection === "true" ? "✓ 選択済み" : selection === "mixed" ? "− 一部選択" : "選択する"}<span class="sr-only"> ${esc(item.title)}</span></button>
-      ${item.structure === "Alternative Group" ? children : ""}
+      ${["Alternative Group", "Flexible Block"].includes(item.structure) ? children : ""}
     </article>`;
 }
 function comparisonHtml(item) {
@@ -210,6 +228,7 @@ function renderItems({ fit = true } = {}) {
   itemsElement.querySelectorAll(".details-toggle").forEach((button) => button.addEventListener("click", () => {
     const id = button.closest(".item").dataset.id, expanded = !state.expandedItemIds.has(id);
     expanded ? state.expandedItemIds.add(id) : state.expandedItemIds.delete(id); setExpanded(button, expanded);
+    renderMap(false); paintFocus();
   }));
   itemsElement.querySelectorAll("[data-other-day]").forEach((button) => button.addEventListener("click", () => selectDay(button.dataset.otherDay)));
   itemsElement.querySelectorAll("[data-select]").forEach((button) => button.addEventListener("click", () => {
@@ -217,7 +236,15 @@ function renderItems({ fit = true } = {}) {
     if (state.filters.selectedOnly) {
       const id = button.dataset.select; renderItems({ fit: false });
       (itemsElement.querySelector(`[data-select="${CSS.escape(id)}"]`) || app.querySelector(".clear-selection")).focus({ preventScroll: true });
-    } else { paintSelection(); paintFocus(); updateComparisonStatus(); }
+    } else { paintSelection(); renderMap(false); paintFocus(); updateComparisonStatus(); }
+  }));
+  itemsElement.querySelectorAll("[data-directions]").forEach(button => button.addEventListener("click", () => {
+    if (locationIsStale(currentLocation)) { locationMessage = "現在地を更新してから経路を開いてください。"; paintLocationStatus(); return; }
+    const destination = resolveDestination(tree.byId.get(button.dataset.directions), places, state.focusedItemId, state.activeCandidateByGroup);
+    const url = buildDirectionsUrl(currentLocation, destination);
+    if (!url) return;
+    try { window.open(url, "_blank", "noopener,noreferrer"); }
+    catch { button.nextElementSibling.textContent = "外部経路を開けませんでした。ブラウザの設定を確認して再試行してください。"; }
   }));
   setupCandidates(); updateComparisonStatus(); renderTimeControls(); renderMap(fit); paintFocus();
 }
@@ -335,6 +362,11 @@ function paintSelection() {
 }
 
 function paintFocus() {
+  paintDirections();
+  itemsElement.querySelectorAll("[data-detour-assessment]").forEach(element => {
+    const detour = tree.byId.get(element.dataset.detourAssessment);
+    element.textContent = detourAssessment(detour, tree.byId.get(detour.detourForId), tree, state.activeCandidateByGroup).text;
+  });
   const focused = focusedMapIds(state.focusedItemId, visibleRoots, state.activeCandidateByGroup);
   const selected = (id) => { const node = tree.byId.get(id); return node && selectionState(node, state.selectedIds) !== "false"; };
   itemsElement.querySelectorAll(".item").forEach((card) => {
@@ -372,7 +404,10 @@ function focusItem(id, source) {
     branch = parent;
   }
   const changed = state.focusedItemId !== id;
-  state.focusedItemId = id; state.focusSource = source; paintFocus();
+  state.focusedItemId = id; state.focusSource = source;
+  const desired = mapNodes(visibleRoots, state.activeCandidateByGroup, state.mapTimeRange, state.selectedDay, data.trip.timezone, places, state);
+  if (desired.map(n => n.id).join() !== geographicItems.map(n => n.id).join()) renderMap(false);
+  paintFocus();
   const card = [...itemsElement.querySelectorAll(".item")].find((element) => element.dataset.id === id);
   if (source === "map" && card) {
     programmaticScroll = true; clearTimeout(scrollTimer);
@@ -401,7 +436,7 @@ function popupFor(place, items) {
 }
 
 function renderMap(fit = true) {
-  geographicItems = mapNodes(visibleRoots, state.activeCandidateByGroup, state.mapTimeRange, state.selectedDay, data.trip.timezone, places);
+  geographicItems = mapNodes(visibleRoots, state.activeCandidateByGroup, state.mapTimeRange, state.selectedDay, data.trip.timezone, places, state);
   app.querySelector(".time-status").textContent = `地図対象 ${geographicItems.length}件 · タイムラインと選択は変更されません。`;
   if (!map) return;
   map.closePopup(); layerGroup.clearLayers(); itemLayers = new Map(); markers = []; bounds = [];
@@ -460,7 +495,7 @@ async function loadMap() {
     let tileErrors = 0;
     tiles.on("tileerror", () => { tileErrors++; mapStatus("背景地図を読み込めません。地点・概略線と旅程、外部地図リンクを利用できます。"); });
     tiles.on("loading", () => { tileErrors = 0; }); tiles.on("load", () => { if (!tileErrors && bounds.length) mapStatus(""); });
-    layerGroup = L.layerGroup().addTo(map); renderMap(); paintFocus();
+    layerGroup = L.layerGroup().addTo(map); locationLayer = L.layerGroup().addTo(map); renderMap(); paintFocus(); paintLocation();
     matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", () => {
       map.options.zoomAnimation = !reducedMotion(); map.options.fadeAnimation = !reducedMotion(); map.options.markerZoomAnimation = !reducedMotion();
     });
@@ -502,7 +537,7 @@ async function start() {
     const response = await fetch("/api/itinerary", { cache: "no-store" });
     if (!response.ok) throw new Error("itinerary");
     const next = await response.json(); setupShell(); updateData(next); applySyncHeader(response, false);
-    void loadMap(); setInterval(updateCooldown, 1000);
+    void loadMap(); setInterval(() => { updateCooldown(); paintLocationStatus(); }, 1000);
   } catch {
     app.setAttribute("aria-busy", "false");
     app.innerHTML = '<section class="error" role="alert"><h1>旅程を読み込めませんでした。</h1><p>通信状況を確認して、もう一度お試しください。</p><button type="button" class="retry">再試行</button></section>';
@@ -510,3 +545,47 @@ async function start() {
   }
 }
 void start();
+
+function paintDirections() {
+  if (!tree) return;
+  itemsElement.querySelectorAll("[data-directions]").forEach(button => {
+    const destination = resolveDestination(tree.byId.get(button.dataset.directions), places, state.focusedItemId, state.activeCandidateByGroup);
+    const reason = !destination ? "目的地を解決できません。場所または到着地の座標・公開住所を確認してください。" : !currentLocation ? "「現在地を表示」で取得してください。" : locationIsStale(currentLocation) ? "現在地が古い情報です。「現在地を更新」で再取得してください。" : "Google Mapsを新しいタブで開きます。";
+    button.disabled = !destination || locationIsStale(currentLocation); button.nextElementSibling.textContent = reason;
+  });
+}
+function paintLocationStatus() {
+  if (!app.querySelector(".location-status")) return;
+  app.querySelector(".location-button").textContent = locationBusy ? "現在地を取得中…" : currentLocation ? "現在地を更新" : "現在地を表示";
+  app.querySelector(".location-button").disabled = locationBusy;
+  app.querySelector(".location-status").textContent = currentLocation ? `${locationMessage} 精度：約${Math.round(currentLocation.accuracy)}m · 取得 ${formatDateTime(new Date(currentLocation.timestamp).toISOString(), data.trip.timezone)}${locationIsStale(currentLocation) ? " · 古い情報です。現在地を更新してください。" : ""}` : locationMessage;
+  paintDirections();
+}
+function paintLocation() {
+  if (!locationLayer) return;
+  locationLayer.clearLayers();
+  if (!currentLocation) return;
+  const coordinate = [currentLocation.latitude, currentLocation.longitude];
+  L.circle(coordinate, { radius: currentLocation.accuracy, className: "current-location-accuracy", color: "#286d62", fillOpacity: .12, interactive: false }).addTo(locationLayer);
+  L.marker(coordinate, { interactive: false, keyboard: false, title: "現在地（旅程の選択対象外）", icon: L.divIcon({ className: "current-location-pin", html: '<span aria-hidden="true">◎</span>', iconSize: [32, 32], iconAnchor: [16, 16] }) }).addTo(locationLayer);
+}
+function requestLocation() {
+  if (locationBusy) return;
+  if (!window.isSecureContext) { locationMessage = "現在地にはHTTPSの安全な接続が必要です。HTTPSで開いてください。"; paintLocationStatus(); return; }
+  if (!navigator.geolocation) { locationMessage = "このブラウザは位置情報APIに対応していません。対応ブラウザを利用してください。"; paintLocationStatus(); return; }
+  locationBusy = true; locationMessage = "現在地を取得しています…"; paintLocationStatus();
+  const failure = error => {
+    locationBusy = false;
+    locationMessage = ({ 1: "位置情報の利用が許可されていません。ブラウザの権限設定を確認して再試行してください。", 2: "現在地を取得できません。通信・端末の位置設定を確認して再試行してください。", 3: "現在地の取得がタイムアウトしました。再試行してください。" })[error?.code] || "現在地を取得できません。再試行してください。";
+    paintLocationStatus();
+  };
+  try {
+    navigator.geolocation.getCurrentPosition(position => {
+      const location = { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy, timestamp: position.timestamp };
+      if (!hasCoordinates(location) || !Number.isFinite(location.accuracy) || location.accuracy < 0 || !Number.isFinite(location.timestamp)) { failure({ code: 2 }); return; }
+      currentLocation = location; locationBusy = false; locationMessage = "◎ 現在地を表示しています。";
+      clearTimeout(locationExpiryTimer); locationExpiryTimer = setTimeout(paintLocationStatus, Math.max(0, location.timestamp + 300001 - Date.now()));
+      paintLocation(); paintLocationStatus();
+    }, failure, { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 });
+  } catch { failure({ code: 2 }); }
+}
