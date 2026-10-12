@@ -123,7 +123,9 @@ baseline branch codex/phase3-20261012-182749、commit 65eb5e8b3e79bdf2c39de84fe8
 
 checkpoint b98f2e5（同期/モデル/追加41テスト/計画）、656ff3e（UI/テスト/文書）、18f1178（実配信Geolocation policy修正）、c54c5c9（候補scroll競合修正/最終全検証）を専用branchへpush済み。最終デプロイ対象は c54c5c90b7eea717b1ec9e89e37c8567ff84064b。報告・sanitized証拠commitは 02e4a67c5037db4cdb84c74f4b873b2922ccf5e6。以後の報告・証拠更新はdocsのみで、配信コードとの差分はない。force-push/rebase/remote削除/既存branch履歴書換えなし。
 
-GitHub PR: **[#2 Phase 3 柔軟な当日運用を実装](https://github.com/baribaritozan/Travel-Itinerary-System/pull/2)**。19:32:11 JST作成、base main、head codex/phase3-20261012-182749、open、非draft、未merge。本chatへPRをattach済み。作成直前にorigin/mainをfetchし、mainの追加commitなし・merge-treeの競合なしを確認した。作業開始前からローカルにcommitされていた正式仕様v0.4とdocs/PHASE3_GOAL_PROMPT.mdも、origin/mainとの差分に含まれる。本タスクでの仕様変更はbaseline比較で0。このPRリンク追記後のdocs commitも同じbranchへpushし、origin SHAとローカルHEADの一致を最終確認する。
+GitHub PR: **[#2 Phase 3 柔軟な当日運用を実装](https://github.com/baribaritozan/Travel-Itinerary-System/pull/2)**。19:32:11 JST作成、base main、head codex/phase3-20261012-182749、open、非draft、未merge。本chatへPRをattach済み。作成直前にorigin/mainをfetchし、mainの追加commitなし・merge-treeの競合なしを確認した。作業開始前からローカルにcommitされていた正式仕様v0.4とdocs/PHASE3_GOAL_PROMPT.mdも、origin/mainとの差分に含まれる。本タスクでの仕様変更はbaseline比較で0。PRリンク追記commit a4f384a157f14ebdba7966260bd81e9c0b48aa4fも同じbranchへpushし、origin SHA・PR head・ローカルHEADの一致、PR mergeable=true/未mergeを確認した。
+
+最終読み取り確認: `wrangler deployments status --json` は上記最終deployment/version/100%と一致。配信app.js/model.mjs/styles.cssは検証済みdistと完全一致、ルートの同一origin Geolocation policyも一致。公開APIは8件、Phase 3サンプル0件、全item IDは64桁の公開hash。docs以外はデプロイ対象commitとの差分0、作業ツリーclean。以後はこの確認結果だけをdocsへ追記し、同じbranchへpushした。
 
 復旧手順（実行時は日時と新規checkout名を採番）:
 
