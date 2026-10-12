@@ -1,6 +1,6 @@
 # Phase 3 実装・検証報告
 
-正式要求はSPECIFICATION.md v0.4。実施日2026-10-12、Asia/Tokyo。現在はローカル検証・Notion追加が完了、本番デプロイ/smoke/後片付け/PRの結果を追記するまで未完了。
+正式要求はSPECIFICATION.md v0.4。実施日2026-10-12、Asia/Tokyo。FR-18〜FR-21、受け入れ基準1〜16の実装、ローカル全検証、本番デプロイとsmoke、Notionサンプルの後片付けを完了。GitHub PRの作成情報は下記Git節に記録する。sanitized実環境証拠は [PHASE3_EVIDENCE.json](PHASE3_EVIDENCE.json) に保存した。
 
 ## 実装と要件・証拠の対応
 
@@ -65,6 +65,10 @@ Node実体 `C:\Users\wyuya\AppData\Local\Volta\tools\image\node\24.21.0\node.exe
 | 修正後 npm test / npm run test:browser | 93/93、34/35。新規競合テスト成功、既存scrollテストの断続失敗。phase3-unit-after-race.txt / phase3-browser-after-race.txt |
 | scrollイベント時刻の診断、関連2テストを8回実行 | native scroll通知が擬似clock.runForの後に届く失敗を再現。通知を観測してからclockを進める同期だけ追加し、2件×8回すべて成功。既存の50ms中の地図不変・300ms後focus・700ms後の安定・pan高々1回を全保持 |
 | 最終修正後 npm test / npm run test:browser / npm run build / 全node --check / git diff --check | 93/93、35/35、fail0 skip0、build/14構文/diff成功。phase3-unit-final-validated.txt / phase3-browser-final-validated.txt / phase3-build-final-validated.txt。既存6テストと仕様のbaseline差分0 |
+| 既存Wrangler deploy --dry-run → deploy → deployments status --json（commit c54c5c9） | 成功、version 32964f5b-749a-4af1-a811-2e55eaf1bba6、100%。phase3-deploy-final-dry-run.txt / phase3-deploy-final.txt / phase3-deployment-validated-status.json |
+| node artifacts/phase3-live.mjs live c54c5c90b7eea717b1ec9e89e37c8567ff84064b | 390/1440/390+Leaflet遮断すべて成功、全11行false・API/画面/キャッシュ除去・8行hash一致。phase3-production-results.json / phase3-production-final-command.txt |
+| node artifacts/phase3-live.mjs audit（最終、read-only） | 19:28:03.741 JST、390/1440画面、公開8件/サンプル0/全11行false/hash一致を再確認。phase3-final-state-audit.txt / .json |
+| git -c credential.username=baribaritozan -c credential.interactive=false push origin codex/phase3-20261012-182749; git ls-remote ... | c54c5c9到達確認。GCM複数アカウントの無指定pushは停止し中断、無指定非対話は認証失敗。登録済み所有アカウントをプロセス限定で指定して解消。認証情報/OS設定変更なし |
 
 通常のブラウザシナリオはconsole error/uncaught error 0。Leaflet/タイル/API失敗注入時のブラウザnetwork errorは明示条件だけ許容する。過去の失敗ログを削除せず原因と修正を記録した。
 
@@ -97,11 +101,27 @@ Node実体 `C:\Users\wyuya\AppData\Local\Volta\tools\image\node\24.21.0\node.exe
 
 注意: Phase 2報告書では最終falseだが、開始時の実Notion/本番APIはPhase 2サンプル5行がtrueだった。RESTとconnector双方で確認し、既存行read-onlyの指示に従って一切変更していない。Phase 3の後片付け対象には含めない。開始時の公開8件を復帰基準とする。
 
+一時公開の目的は実Notion→Worker同期→公開画面の検証。以下は各行の `true → false` 操作時刻（2026-10-12 JST）。名称はすべて `[Phase3 Sample]` 接頭辞付き。各回ともfinallyでfalseへ戻し、削除・archiveなし。秒未満を含む各API操作応答時刻はPHASE3_EVIDENCE.jsonのpublicationRuns.changesに保存。
+
+| サンプル | 初回 true → false | 2回目 true → false | 最終 true → false | 最終Publish |
+| --- | --- | --- | --- | --- |
+| 自由時間 | 19:03:47 → 19:04:03 | 19:11:54 → 19:12:07 | 19:24:45 → 19:25:03 | false |
+| 寺の候補 | 19:03:46 → 19:04:03 | 19:11:53 → 19:12:07 | 19:24:45 → 19:25:04 | false |
+| 駅の候補 | 19:03:46 → 19:04:04 | 19:11:53 → 19:12:08 | 19:24:44 → 19:25:04 | false |
+| 移動 | 19:03:46 → 19:04:04 | 19:11:53 → 19:12:08 | 19:24:44 → 19:25:04 | false |
+| 次の固定予定 | 19:03:44 → 19:04:04 | 19:11:52 → 19:12:08 | 19:24:44 → 19:25:05 | false |
+| 単独寄り道 | 19:03:44 → 19:04:05 | 19:11:52 → 19:12:09 | 19:24:42 → 19:25:05 | false |
+| 系列寄り道 | 19:03:42 → 19:04:05 | 19:11:52 → 19:12:09 | 19:24:42 → 19:25:05 | false |
+| 系列の子 | 19:03:42 → 19:04:07 | 19:11:51 → 19:12:09 | 19:24:41 → 19:25:06 | false |
+| 比較寄り道 | 19:03:41 → 19:04:07 | 19:11:51 → 19:12:10 | 19:24:40 → 19:25:06 | false |
+| 比較案A | 19:03:41 → 19:04:08 | 19:11:51 → 19:12:10 | 19:24:40 → 19:25:06 | false |
+| 比較案B | 19:03:41 → 19:04:08 | 19:11:50 → 19:12:10 | 19:24:39 → 19:25:07 | false |
+
 ## Git・非破壊復旧
 
 baseline branch codex/phase3-20261012-182749、commit 65eb5e8b3e79bdf2c39de84fe87d7deb42417cd5、annotated tag phase3-baseline-20261012-182749。作成18:27:53 JST、origin branch/tag/peeled SHA一致を確認してから変更開始。詳細はPHASE3_PLAN.md。
 
-checkpoint b98f2e5（同期/モデル/追加41テスト/計画）push済み。初回実装commit 656ff3eae9cf47db1e9806421f5e60a177e354bdはpush/デプロイ後に下記不具合を検出しrollbackした。最終実装commit・PRは本番結果とともに追記する。force-push/rebase/remote削除/既存branch履歴書換えなし。
+checkpoint b98f2e5（同期/モデル/追加41テスト/計画）、656ff3e（UI/テスト/文書）、18f1178（実配信Geolocation policy修正）、c54c5c9（候補scroll競合修正/最終全検証）を専用branchへpush済み。最終デプロイ対象は c54c5c90b7eea717b1ec9e89e37c8567ff84064b。以後の報告・証拠更新はdocsのみで、配信コードとの差分はない。force-push/rebase/remote削除/既存branch履歴書換えなし。PR URLは作成後追記する。
 
 復旧手順（実行時は日時と新規checkout名を採番）:
 
@@ -129,10 +149,16 @@ wrangler deploy
 
 2回目のデプロイは19:10:52.003 JST、commit 18f11785e8821e29abcc2f62c608e54908bee7f0、deployment 5a8818d5-8e87-4437-b775-43908cea5696、version d12b4e06-a5dd-4d84-8b90-b5353f77cc6a。19:11:49.856開始のsmokeでmobile/PCは成功し、実APIでの位置取得・メモリ境界・Directions/noopenerも成功した。一方、Leaflet遮断条件で候補切替後にfilterをかけると、遅延scroll callbackが削除済みcarouselを参照してuncaught errorになった。
 
-19:12:59.754に全11行false・API/画面/キャッシュ消滅・既存8行hash一致を確認し、同じ旧versionへ再rollbackした。19:13:58.561の390/1440復旧smokeも成功。削除済みcarouselおよび現行treeにないgroup/candidateを無視する最小修正と、再現回帰テストを追加した。再デプロイ・最終smoke・PRは結果待ち。未達のままGoalは完了にしない。
+19:12:59.754に全11行false・API/画面/キャッシュ消滅・既存8行hash一致を確認し、同じ旧versionへ再rollbackした。19:13:58.561の390/1440復旧smokeも成功。削除済みcarouselおよび現行treeにないgroup/candidateを無視する最小修正と、再現回帰テストを追加した。
+
+最終デプロイは19:24:10.142 JST、検証済みcommit c54c5c90b7eea717b1ec9e89e37c8567ff84064b、deployment **afa922c1-0fa9-446e-b104-2c30d479bb31**、version **32964f5b-749a-4af1-a811-2e55eaf1bba6**（100%）。既存Worker/account/environment/Secret/bindings/domainは維持。公開されたapp.jsが検証済みsourceと同一で、Permissions-Policyが同一originの位置取得を許可することを、サンプル公開前に検査した。
+
+19:24:37.586〜19:25:50.920の本番smokeは390×844・1440×900・390×844でLeaflet遮断の3条件すべて成功。実Notion由来の自由時間候補・親子focus/三状態選択・時間範囲・フィルター・寄り道3構造/余裕/超過/明示地図表示・候補変更・現在地の実API成功/拒否・Directions popup/noopener・storage/request/console境界・reload破棄を確認。位置は固定エミュレーションのみで、Google通信は捕捉してテスト座標を送信していない。通常console/uncaught errorは0、意図したLeaflet遮断のnetwork errorだけを区別した。
+
+19:25:07.306までに11件のPublish=false操作を完了。クールダウン後の再取得で19:25:50.920に公開API8件、Phase 3サンプルAPI/画面0件、キャッシュ除去、既存8行hash一致を確認。19:28:03.741のread-only再検査でも全11件false、公開8件/サンプル0、既存hash一致、390/1440画面smoke成功。schemaと非公開サンプルは残し、既存行・Phase 2サンプルは変更していない。最終本番画像も実際に開いて、文字・余白・境界・操作領域を確認した。
 
 ## 変更ファイル・制約
 
-scripts/notion.mjs、public/model.mjs、public/app.js、public/styles.css、public/_headers、tests/phase3-sync.test.mjs、tests/phase3-model.test.mjs、scripts/browser-check.mjs、README.md、docs/DEPLOYMENT.md、docs/PHASE3_PLAN.md、docs/PHASE3_REPORT.md。SPECIFICATION.md、既存6単体/統合テスト、Worker/公開更新境界、wrangler設定、依存バージョンは変更していない。artifactsの画像/ログ/実環境検証スクリプトはGit対象外。
+scripts/notion.mjs、public/model.mjs、public/app.js、public/styles.css、public/_headers、tests/phase3-sync.test.mjs、tests/phase3-model.test.mjs、scripts/browser-check.mjs、README.md、docs/DEPLOYMENT.md、docs/PHASE3_PLAN.md、docs/PHASE3_REPORT.md、docs/PHASE3_EVIDENCE.json。SPECIFICATION.md、既存6単体/統合テスト、Worker/公開更新境界、wrangler設定、依存バージョンは変更していない。artifactsの画像/ログ/実環境検証スクリプトはGit対象外。Gitへ保存した証拠はschema名/型/向き、既存公開行の名称/hash、サンプル名称/操作時刻/Publish、検証結果、Cloudflare version/deploymentのみで、Notion内部ID・Secret・利用者の実位置を含まない。
 
-実機iOS/Safariの追加互換検証、外部地図/CDN/第三者サービスの将来稼働保証は対象外。必須条件は固定テスト座標、Chromeのタッチ/キーボード、失敗注入で検証する。未実施の本番検証を成功扱いにしない。
+実機iOS/Safariの追加互換検証、外部地図/CDN/第三者サービスの将来稼働保証は対象外。必須条件は固定テスト座標、Chromeのタッチ/キーボード、失敗注入で検証済み。未達必須要件・既知の重大回帰・公開中のPhase 3サンプル・復旧不能な外部変更は残っていない。
