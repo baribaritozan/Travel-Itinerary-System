@@ -1,0 +1,186 @@
+{
+  "date": "2026-10-16",
+  "startSHA": "5115adbe3d4d06b333a9f9e1bd1f4b01cfce8ee4",
+  "branch": "codex/phase4-20261012",
+  "environment": {
+    "os": "Windows",
+    "node": "24.21.0",
+    "chrome": "155.0.8059.79",
+    "playwright": "1.62.1",
+    "browserTimezone": "America/Los_Angeles",
+    "tripTimezone": "Asia/Tokyo",
+    "iPhoneAndroidPhysicalDevice": false
+  },
+  "baseline": {
+    "unit": 109,
+    "browser": 39,
+    "pwa": 9,
+    "pwaClockFixedToFixtureDay": true
+  },
+  "tests": {
+    "unit": {
+      "tests": 109,
+      "pass": 109,
+      "fail": 0,
+      "skipped": 0,
+      "log": "artifacts/phase5-unit.log"
+    },
+    "browser": {
+      "tests": 45,
+      "pass": 45,
+      "fail": 0,
+      "skipped": 0,
+      "log": "artifacts/phase5-browser.log"
+    },
+    "pwa": {
+      "tests": 10,
+      "pass": 10,
+      "fail": 0,
+      "skipped": 0,
+      "log": "artifacts/phase5-pwa.log"
+    }
+  },
+  "total": 164,
+  "build": {
+    "version": "7cb8e398d4aa3339",
+    "verifiedAssets": 16
+  },
+  "geometry": [
+    {
+      "name": "normal-rail",
+      "count": 10,
+      "maxCenterDelta": 0.0078125,
+      "axes": [
+        68
+      ]
+    },
+    {
+      "name": "detail-rail",
+      "count": 10,
+      "maxCenterDelta": 0.0078125,
+      "axes": [
+        68
+      ]
+    },
+    {
+      "name": "scene-rail",
+      "count": 5,
+      "maxCenterDelta": 0.0078125,
+      "axes": [
+        68
+      ]
+    },
+    {
+      "name": "switched-rail",
+      "count": 2,
+      "maxCenterDelta": 0.0078125,
+      "axes": [
+        68
+      ]
+    },
+    {
+      "name": "rail-320x844",
+      "count": 7,
+      "maxCenterDelta": 0.0078125,
+      "axes": [
+        68
+      ]
+    },
+    {
+      "name": "rail-390x844",
+      "count": 7,
+      "maxCenterDelta": 0.0078125,
+      "axes": [
+        68
+      ]
+    },
+    {
+      "name": "rail-390x450",
+      "count": 7,
+      "maxCenterDelta": 0.0078125,
+      "axes": [
+        68
+      ]
+    },
+    {
+      "name": "rail-1440x900",
+      "count": 12,
+      "maxCenterDelta": 0.0078125,
+      "axes": [
+        72,
+        487.453125,
+        152,
+        822.90625
+      ]
+    },
+    {
+      "name": "rail-200",
+      "count": 7,
+      "maxCenterDelta": 0,
+      "axes": [
+        144
+      ]
+    }
+  ],
+  "contrast": [
+    {
+      "foreground": "#20362a",
+      "background": "#f3f5f2",
+      "ratio": 11.81
+    },
+    {
+      "foreground": "#526457",
+      "background": "#ffffff",
+      "ratio": 6.33
+    },
+    {
+      "foreground": "#ffffff",
+      "background": "#26513e",
+      "ratio": 9.02
+    },
+    {
+      "foreground": "#91481f",
+      "background": "#ffffff",
+      "ratio": 6.67
+    }
+  ],
+  "migration": {
+    "legacyVersion": "78eb04e7bc2bf47f",
+    "newVersion": "7cb8e398d4aa3339",
+    "navigations": 1,
+    "offlineRestart": true,
+    "savedVersion": "2026-10-12T00:00:00Z",
+    "expiresAt": 1794355200711
+  },
+  "images": [
+    "artifacts/phase5-normal.png",
+    "artifacts/phase5-switched.png",
+    "artifacts/phase5-fullscreen.png",
+    "artifacts/phase5-comparison.png",
+    "artifacts/phase5-other-menu.png",
+    "artifacts/phase5-standard-map.png",
+    "artifacts/phase5-maximum-hierarchy.png",
+    "artifacts/phase5-desktop.png",
+    "artifacts/phase5-320-text-200.png",
+    "artifacts/phase5-offline.png",
+    "artifacts/phase5-legacy-update-waiting.png"
+  ],
+  "sourceHashes": {
+    "public/app.js": "d87c5d2928ba12ff73c489f3aec6adf183d69c396085011356c4aca165621e65",
+    "public/styles.css": "2ef04b241b73301d093762eec0f0e242a3b9c6b243287f6ebcbfcf3b0e6398db",
+    "public/model.mjs": "86bae6c6660b4fcfa3813af3678ecbf56d3cab85b4c716793cd5109060631591",
+    "public/offline.mjs": "427663a90296ce586542925d459d513b6960195b1d49221c365bcacb0d2f7149",
+    "public/pwa.mjs": "75fb323095ad72666aa2a072a153454c6aeecd88e035becaf1a1225a2a03afa5",
+    "public/sw.js": "4bbfda410562145102368c9daa82785563da7ce5c6d1e9e4248ad0114e92cff1"
+  },
+  "externalChanges": {
+    "deploy": false,
+    "push": false,
+    "PR": false,
+    "Notion": false
+  },
+  "checks": {
+    "syntaxFiles": 26,
+    "diffCheck": true
+  }
+}

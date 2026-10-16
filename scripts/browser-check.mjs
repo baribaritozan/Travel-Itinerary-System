@@ -4,6 +4,8 @@ import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
 import { resolve, extname } from "node:path";
 import { chromium } from "playwright";
+import { withNavigation } from "./ui-navigation.mjs";
+import { phase5Fixture } from "./phase5-fixture.mjs";
 
 // Local fixtures only, actual Leaflet 1.9.4. No production API or Notion access.
 const fixture = {
@@ -52,7 +54,7 @@ const tile = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><
 
 async function open(t, options = {}) {
   const context = await browser.newContext({ viewport: options.desktop ? { width: 1440, height: 900 } : { width: 390, height: 844 }, timezoneId: "America/Los_Angeles", reducedMotion: options.motion || "reduce", hasTouch: !options.desktop });
-  const page = await context.newPage(), errors = [], consoles = [];
+  const page = withNavigation(await context.newPage()), errors = [], consoles = [];
   page.setDefaultTimeout(8000);
   page.on("pageerror", (error) => errors.push(error.message)); page.on("console", (message) => { if (message.type() === "error") consoles.push(message.text()); });
   await context.route("**/assets/leaflet.*", async (route) => {
@@ -69,7 +71,9 @@ async function open(t, options = {}) {
   });
   if (options.initScript) await context.addInitScript(options.initScript);
   await page.clock.install({ time: new Date("2026-10-08T15:30:00Z") }); await page.goto(base); await page.locator(".item").first().waitFor();
-  if (!options.noMap) await page.locator(".place-pin").first().waitFor();
+  if (!options.minimal) await page.locator(".nav-map").click();
+  await page.clock.runFor(250);
+  if (!options.noMap && !options.minimal) await page.locator(".place-pin").first().waitFor();
   return { page, context };
 }
 const card = (page, id) => page.locator(`.item[data-id="${id}"]`);
@@ -92,7 +96,7 @@ test("mobile: zone, sorting, empty dates, map update, panel modes, 44px and touc
   assert.deepEqual(await page.locator("button, .actions a, .leaflet-control-zoom a, .place-pin").evaluateAll((els) => els.filter((el) => { const r = el.getBoundingClientRect(); return r.width && r.height && (r.width < 44 || r.height < 44); }).map((el) => ({ class: el.className, text: el.textContent }))), []);
   assert.equal(await page.locator(".timeline-node").evaluateAll((els) => els.every((el) => el.getBoundingClientRect().left >= 0)), true, "node hit areas are not clipped at screen edge");
   await page.locator('button[data-mode="minimal"]').tap(); assert.equal(await page.locator("#map").isVisible(), false);
-  await page.locator('button[data-mode="expanded"]').tap(); assert.equal(await page.locator(".timeline-panel").evaluate((el) => el.inert), true); assert.equal(Math.round((await page.locator(".map-panel").boundingBox()).height), 844);
+  await page.locator('button[data-mode="expanded"]').tap(); assert.equal(await page.locator(".timeline-panel").evaluate((el) => el.inert), true); assert.ok(Math.abs((await page.locator(".map-panel").boundingBox()).height + (await page.locator('.menu-bar').boundingBox()).height - 844) <= 1);
   await page.keyboard.press("Escape"); assert.equal(await page.locator(".map-panel").getAttribute("data-mode"), "standard");
   await page.locator('[data-day="2026-10-10"]').tap(); assert.equal(await page.locator(".item").count(), 1); assert.equal(await page.locator(".place-pin").count(), 1);
   await page.locator('[data-day="2026-10-11"]').tap(); assert.match(await page.locator(".empty").innerText(), /公開予定はありません/); assert.equal(await page.locator(".place-pin").count(), 0);
@@ -110,7 +114,7 @@ test("date change while map is minimal fits the new day when map is restored", a
 
 test("desktop: independent panes, details independence and bidirectional map focus", async (t) => {
   const { page } = await open(t, { desktop: true });
-  const tl = await page.locator(".timeline-panel").boundingBox(), mp = await page.locator(".map-panel").boundingBox(); assert.ok(tl.x < mp.x && tl.width >= 360 && tl.width <= 480); assert.equal(mp.height, 900);
+  const tl = await page.locator(".timeline-panel").boundingBox(), mp = await page.locator(".map-panel").boundingBox(); assert.ok(tl.x < mp.x && tl.width >= 360 && tl.width <= 480); assert.equal(mp.height + (await page.locator('.menu-bar').boundingBox()).height, 900);
   await card(page, "arrival").locator(".details-toggle").click(); assert.equal(await page.locator(".item.active").count(), 0);
   assert.match(await card(page, "arrival").locator(".item-details").innerText(), /中央改札.*待ち合わせ/s);
   await page.locator('[data-day="2026-10-10"]').click(); await page.locator('[data-day="2026-10-09"]').click();
@@ -118,7 +122,7 @@ test("desktop: independent panes, details independence and bidirectional map foc
   await card(page, "arrival").locator(".card-focus").click(); assert.equal(await selected(page), "arrival"); assert.equal(await page.locator(".focused-pin").count(), 1);
   await card(page, "visit").locator(".card-focus").click(); assert.equal(await selected(page), "visit"); assert.equal(await card(page, "arrival").locator(".details-toggle").getAttribute("aria-expanded"), "true"); assert.equal(await page.locator(".focused-pin").count(), 1);
   await page.locator('.place-pin[title^="宿："]').click(); await page.clock.runFor(1200); assert.equal(await selected(page), "checkin");
-  assert.ok(Math.abs((await card(page, "checkin").boundingBox()).y - 450) < 6, "map-origin scroll uses desktop spot");
+  assert.ok(Math.abs((await card(page, "checkin").boundingBox()).y - tl.height / 2) < 6, "map-origin scroll uses desktop spot");
   await page.locator('.place-pin[title^="清水寺："]').click(); assert.equal(await page.locator(".popup-item").count(), 3);
   await page.getByRole("button", { name: "10:30 清水寺を見学", exact: true }).click(); await page.clock.runFor(1200); assert.equal(await selected(page), "visit");
   await page.locator(".route-hit").focus(); await page.keyboard.press("Enter"); await page.clock.runFor(1200); assert.equal(await selected(page), "transit"); assert.equal(await page.locator('.route-hit[aria-pressed="true"]').count(), 1);
@@ -133,7 +137,7 @@ test("keyboard only: dates, summary, details, links, nodes, markers and lines", 
   await page.keyboard.press("Space"); assert.equal(await selected(page), "arrival"); await page.keyboard.press("Tab"); await page.keyboard.press("Enter"); assert.equal(await card(page, "arrival").locator(".details-toggle").getAttribute("aria-expanded"), "true");
   await page.keyboard.press("Tab"); assert.equal(await page.evaluate(() => document.activeElement.tagName), "A");
   const promised = context.waitForEvent("page"); await page.keyboard.press("Enter"); const popup = await promised; await popup.waitForLoadState(); assert.match(popup.url(), /example\.test/); assert.equal(await popup.evaluate(() => window.opener), null); await popup.close(); assert.equal(await selected(page), "arrival");
-  await card(page, "visit").locator(".timeline-node").focus(); await page.keyboard.press("Space"); assert.equal(await selected(page), "visit");
+  await page.locator('[data-rail-id="visit"]').focus(); await page.keyboard.press("Space"); assert.equal(await selected(page), "visit");
   await page.locator('.place-pin[title^="宿："]').focus(); await page.keyboard.press("Space"); await page.clock.runFor(1200); assert.equal(await selected(page), "checkin");
   await page.locator(".route-hit").focus(); await page.keyboard.press("Space"); await page.clock.runFor(1200); assert.equal(await selected(page), "transit"); assert.notEqual(await card(page, "transit").locator(".card-focus").evaluate((el) => getComputedStyle(el).outlineStyle), "none");
 });
@@ -163,7 +167,11 @@ test("mobile map-origin focus aligns with 35% spot and touch line is operable", 
   await page.locator('.place-pin[title^="宿："]').tap(); await page.clock.runFor(1200); assert.equal(await selected(page), "checkin");
   const panel = await page.locator(".timeline-panel").boundingBox(), focused = await card(page, "checkin").boundingBox();
   assert.ok(Math.abs(focused.y - (panel.y + panel.height * .35)) < 6);
-  await page.locator(".route-hit").tap(); await page.clock.runFor(1200); assert.equal(await selected(page), "transit");
+  await page.locator('.leaflet-control-zoom-in').click(); await page.locator('.leaflet-control-zoom-in').click(); await page.clock.runFor(500);
+  const touchPoint = await page.locator('.route-hit').evaluate(path => {
+    for (let i=1;i<20;i++) { const p=path.getPointAtLength(path.getTotalLength()*i/20), pt=new DOMPoint(p.x,p.y).matrixTransform(path.getScreenCTM()); if(document.elementFromPoint(pt.x,pt.y)===path) return {x:pt.x,y:pt.y}; }
+  });
+  assert.ok(touchPoint, 'route exposes a real unobstructed touch point'); await page.touchscreen.tap(touchPoint.x,touchPoint.y); await page.clock.runFor(1200); assert.equal(await selected(page), "transit");
 });
 
 test("pending refresh cannot be repeated while the response is slow", async (t) => {
@@ -234,32 +242,33 @@ const phase2Fixture = {
     { id: "later", title: "翌日の予定", type: "Meal", start: "2026-10-10T00:00:00Z", placeId: "hotel" },
   ],
 };
-const own = (page, id, selector) => page.locator(`.item[data-id="${id}"] > ${selector}`);
+const own = (page, id, selector) => selector === ".card-focus" ? page.locator(`.item[data-id="${id}"] > .card-heading [data-focus="${id}"], [data-rail-id="${id}"]`).first() : page.locator(`.item[data-id="${id}"] > ${selector}`);
 const checkState = (page, id) => own(page, id, ".select-toggle").getAttribute("aria-checked");
-async function revealSeries(page) { await own(page, "series", ".details-toggle").click(); }
+async function revealSeries(page) { assert.equal(await card(page, "child-a").isVisible(), true, "series body is visible without opening its details"); }
+async function setCandidate(page, id) { const carousel = page.locator(`.group-candidates:has([data-candidate="${id}"])`); const index = await carousel.locator(".candidate-slot").evaluateAll((slots, id) => slots.findIndex(slot => slot.dataset.candidate === id), id); await carousel.focus(); await page.keyboard.press("Home"); for (let n=0;n<index;n++) await page.keyboard.press("ArrowRight"); await page.clock.runFor(400); }
 async function checkPhase2Targets(page) {
   assert.deepEqual(await page.locator("button, summary, input[type=range], .check-label").evaluateAll((els) => els.filter((el) => { const r = el.getBoundingClientRect(); return r.width && r.height && (r.width < 44 || r.height < 44); }).map((el) => ({ class: el.className, text: el.textContent }))), []);
   await noOverflow(page);
 }
 test("Phase 2 mobile: one candidate, buttons/arrows/swipe, active Series map and independent child detail/focus", async (t) => {
   const { page } = await open(t, { payload: phase2Fixture });
-  assert.equal(await page.locator('.activate-candidate[aria-pressed="true"]').getAttribute("data-activate"), "series");
+  assert.equal(await page.locator('.candidate-slot[data-active="true"]').getAttribute("data-candidate"), "series");
   assert.equal(await page.locator(".place-pin").count(), 2); assert.equal(await page.locator(".route-hit").count(), 1);
   const carousel = page.locator(".group-candidates"), width = (await carousel.boundingBox()).width;
   assert.ok(Math.abs((await page.locator(".candidate-slot").first().boundingBox()).width - width) < 12);
   await own(page, "group", ".card-focus").tap(); assert.equal(await page.locator(".focused-pin").count(), 2);
   await page.getByRole("button", { name: "午前の比較の次の候補", exact: true }).tap(); await page.clock.runFor(400);
-  assert.equal(await page.locator('.activate-candidate[aria-pressed="true"]').getAttribute("data-activate"), "single"); assert.equal(await page.locator(".place-pin").count(), 1); assert.equal(await page.locator(".focused-pin").count(), 1);
-  await carousel.focus(); await page.keyboard.press("ArrowRight"); await page.clock.runFor(300); assert.equal(await page.locator('.activate-candidate[aria-pressed="true"]').getAttribute("data-activate"), "third");
+  assert.equal(await page.locator('.candidate-slot[data-active="true"]').getAttribute("data-candidate"), "single"); assert.equal(await page.locator(".place-pin").count(), 1); assert.equal(await page.locator(".focused-pin").count(), 1);
+  await carousel.focus(); await page.keyboard.press("ArrowRight"); await page.clock.runFor(300); assert.equal(await page.locator('.candidate-slot[data-active="true"]').getAttribute("data-candidate"), "third");
   await carousel.scrollIntoViewIfNeeded();
   const cdp = await page.context().newCDPSession(page), r = await carousel.boundingBox(), clip = await page.locator(".timeline-panel").boundingBox();
   const touchY = Math.min(clip.y + clip.height - 40, Math.max(r.y, clip.y) + 60), touchX = r.x + r.width * .15;
   await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: touchX, y: touchY }] });
   for (let step = 1; step <= 8; step++) { await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: touchX + r.width * .7 * step / 8, y: touchY }] }); await new Promise((resolve) => setTimeout(resolve, 25)); }
   await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] }); await page.clock.runFor(700);
-  assert.equal(await page.locator('.activate-candidate[aria-pressed="true"]').getAttribute("data-activate"), "single", `actual horizontal touch gesture switches candidate: ${JSON.stringify({ r, clip, scroll: await carousel.evaluate((el) => el.scrollLeft) })}`);
+  assert.equal(await page.locator('.candidate-slot[data-active="true"]').getAttribute("data-candidate"), "single", `actual horizontal touch gesture switches candidate: ${JSON.stringify({ r, clip, scroll: await carousel.evaluate((el) => el.scrollLeft) })}`);
   await carousel.focus(); await page.keyboard.press("Home"); await page.clock.runFor(400); await cdp.detach();
-  assert.equal(await page.locator('.activate-candidate[aria-pressed="true"]').getAttribute("data-activate"), "series");
+  assert.equal(await page.locator('.candidate-slot[data-active="true"]').getAttribute("data-candidate"), "series");
   await revealSeries(page); await own(page, "child-a", ".card-focus").tap(); assert.equal(await selected(page), "child-a");
   await own(page, "child-a", ".details-toggle").tap(); await own(page, "child-b", ".card-focus").tap(); assert.equal(await selected(page), "child-b");
   assert.equal(await own(page, "child-a", ".details-toggle").getAttribute("aria-expanded"), "true"); assert.match(await card(page, "child-a").locator(".notes").innerText(), /公開詳細/);
@@ -270,8 +279,8 @@ test("Phase 2 desktop: 2–3 visible candidates, explicit active state, group/Se
   const { page } = await open(t, { desktop: true, payload: phase2Fixture });
   const visibleSlots = () => page.locator(".candidate-slot").evaluateAll((els) => { const r = els[0].parentElement.getBoundingClientRect(); return els.filter((el) => { const b = el.getBoundingClientRect(); return b.left >= r.left - 1 && b.right <= r.right + 1; }).length; });
   assert.equal(await visibleSlots(), 3); await page.setViewportSize({ width: 1100, height: 900 }); assert.equal(await visibleSlots(), 2); await page.setViewportSize({ width: 1440, height: 900 });
-  await own(page, "single", ".card-focus").click(); assert.equal(await page.locator('.activate-candidate[aria-pressed="true"]').getAttribute("data-activate"), "single"); assert.equal(await selected(page), "single");
-  await page.locator('[data-activate="series"]').click(); await revealSeries(page); await own(page, "series", ".card-focus").click(); assert.equal(await selected(page), "series"); assert.equal(await page.locator(".focused-pin").count(), 2);
+  await own(page, "single", ".card-focus").click(); assert.equal(await page.locator('.candidate-slot[data-active="true"]').getAttribute("data-candidate"), "single"); assert.equal(await selected(page), "single");
+  await setCandidate(page, "series"); await revealSeries(page); await own(page, "series", ".card-focus").click(); assert.equal(await selected(page), "series"); assert.equal(await page.locator(".focused-pin").count(), 2);
   assert.equal(await page.locator('.place-pin[title^="宿："]').count(), 0, "group own Place does not duplicate or add child map data");
   await page.locator('.place-pin[title^="清水寺："]').focus(); await page.keyboard.press("Space"); await page.getByRole("button", { name: "09:00 系列の寺", exact: true }).click(); await page.clock.runFor(1200); assert.equal(await selected(page), "child-a");
   await checkPhase2Targets(page); await own(page, "group", ".card-focus").scrollIntoViewIfNeeded(); await page.screenshot({ path: "artifacts/phase2-desktop-1440x900.png" });
@@ -320,12 +329,12 @@ test("Phase 2 map time: 15 minute keyboard/range changes preserve timeline, focu
 });
 test("Phase 2 refresh: existing selection/detail/active/time retained and removed IDs pruned", async (t) => {
   const { page, context } = await open(t, { desktop: true, payload: phase2Fixture }); await revealSeries(page); await own(page, "child-a", ".select-toggle").click();
-  await page.locator('[data-activate="single"]').click(); await own(page, "single", ".select-toggle").click(); await own(page, "single", ".details-toggle").click(); await own(page, "single", ".card-focus").click();
+  await setCandidate(page, "single"); await own(page, "single", ".select-toggle").click(); await own(page, "single", ".details-toggle").click(); await own(page, "single", ".card-focus").click();
   const refreshed = structuredClone(phase2Fixture); refreshed.items = refreshed.items.filter((item) => item.id !== "child-a");
   await context.route("**/api/refresh?*", (route) => route.fulfill({ contentType: "application/json", headers: { "X-Itinerary-Cache": "refreshed" }, body: JSON.stringify(refreshed) }));
   await page.locator(".publish-button").click(); await page.locator(".publish-status").filter({ hasText: "最新の旅程" }).waitFor();
   assert.match(await page.locator(".comparison-status").innerText(), /選択 1件/); assert.equal(await checkState(page, "single"), "true"); assert.equal(await own(page, "single", ".details-toggle").getAttribute("aria-expanded"), "true");
-  assert.equal(await page.locator('.activate-candidate[aria-pressed="true"]').getAttribute("data-activate"), "single"); assert.equal(await selected(page), "single"); assert.equal(await page.locator(".time-start").inputValue(), "540");
+  assert.equal(await page.locator('.candidate-slot[data-active="true"]').getAttribute("data-candidate"), "single"); assert.equal(await selected(page), "single"); assert.equal(await page.locator(".time-start").inputValue(), "540");
 });
 test("Phase 2 accessible mobile 200% text/reduced motion, filters and time panel, keyboard Enter/Space and selected only", async (t) => {
   const { page } = await open(t, { payload: phase2Fixture });
@@ -388,7 +397,7 @@ test("Phase 4 transport overlapping labels preserve focused label and missing Fr
   await card(page, "duplicate").locator(".card-focus").click(); assert.equal(await page.locator('.transport-label').filter({ hasText: "徒歩" }).isVisible(), true);
   const changed = structuredClone(payload); changed.places.find(p => p.id === "missing").address = "";
   await page.route("**/api/refresh?*", route => route.fulfill({ contentType: "application/json", headers: { "X-Itinerary-Cache": "refreshed" }, body: JSON.stringify(changed) }));
-  await page.locator(".publish-button").click(); assert.equal(await page.locator('[data-planned="transit"]').isDisabled(), true); assert.match(await card(page, "transit").locator(".planned-reason").innerText(), /出発地/);
+  await page.locator(".publish-button").click(); await page.locator('.publish-status').filter({hasText:'最新の旅程'}).waitFor(); assert.equal(await page.locator('[data-planned="transit"]').isDisabled(), true); assert.match(await card(page, "transit").locator(".planned-reason").innerText(), /出発地/);
   await page.locator(".location-panel summary").click(); await page.locator(".location-button").click(); assert.equal(await page.locator('[data-directions="transit"]').isDisabled(), false);
 });
 test("Phase 3 Flexible Block checklist: order/facts/focus/selection/filters/parent map time and touch", async t => {
@@ -420,7 +429,7 @@ test("Phase 3 detours: three route structures in Transit details, slack and expl
   await own(page, "d-item", ".details-toggle").click(); assert.equal(await page.locator('.place-pin[title*="宿"]').count(), 0);
   await own(page, "d-series", ".details-toggle").click(); await own(page, "d-child", ".card-focus").click(); assert.equal(await selected(page), "d-child");
   await own(page, "d-group", ".card-focus").click(); await page.getByRole("button", { name: "比較する寄り道の次の候補", exact: true }).click(); await page.clock.runFor(400);
-  assert.equal(await page.locator('[data-activate="d-b"]').getAttribute("aria-pressed"), "true"); await noOverflow(page);
+  assert.equal(await page.locator('[data-candidate="d-b"]').getAttribute("data-active"), "true"); await noOverflow(page);
 });
 test("Phase 3 location privacy: no automatic request, one-shot success/precision/stale/reload and Directions popup contract", async t => {
   const { page, context } = await open(t, { payload: phase3Fixture, initScript: geoSuccess });
@@ -514,8 +523,132 @@ test("Phase 3 real Geolocation API respects deployed Permissions-Policy and expl
 test("Phase 3 pending candidate scroll callback is harmless after filters remove its carousel", async t => {
   const { page } = await open(t,{payload:phase3Fixture,noMap:true});
   await own(page,"p3-transit",".details-toggle").click();await page.getByRole("button",{name:"比較する寄り道の次の候補",exact:true}).click();await page.clock.runFor(400);
-  assert.equal(await page.locator('[data-activate="d-b"]').getAttribute("aria-pressed"),"true");
+  assert.equal(await page.locator('[data-candidate="d-b"]').getAttribute("data-active"),"true");
   await page.locator('.group-candidates[data-group="d-group"]').evaluate(el=>el.dispatchEvent(new Event("scroll")));
   await page.locator(".filter-panel > summary").click();await page.locator('.filter-fields input[data-filter="type"][value="Transit"]').check();await page.clock.runFor(400);
   await page.locator(".clear-filters").click();assert.equal(await card(page,"d-group").count(),1);await noOverflow(page);
+});
+
+
+// Phase 5 acceptance evidence: real DOM geometry, input and Leaflet; no app hooks.
+const p5Active = page => page.locator('.group-candidates[data-group="p5-group"] .candidate-slot[data-active="true"]').getAttribute('data-candidate');
+async function measureRail(page, name) {
+  // ResizeObserver is a native renderer lifecycle, not a fake-timer callback.
+  // Resume frames and wait for the exact geometry contract, without relaxing it.
+  await page.clock.resume();
+  await page.waitForFunction(() => {
+    const events=[...document.querySelectorAll('.rail-event')];
+    return events.length && events.every(event=>{const node=event.querySelector('button'),title=document.querySelector('.item[data-id="'+node.dataset.railId+'"] > .card-heading .item-title');const a=node.getBoundingClientRect(),b=title.getBoundingClientRect();return a.width>=44 && a.height>=44 && Math.abs(a.y+a.height/2-b.y-b.height/2)<=2;});
+  });
+  const entries = await page.locator('.rail-event').evaluateAll(events => events.map(event => {
+    const node = event.querySelector('button'), title = document.querySelector('.item[data-id="'+node.dataset.railId+'"] > .card-heading .item-title');
+    const a = node.getBoundingClientRect(), b = title.getBoundingClientRect();
+    return {id:node.dataset.railId, x:a.x+a.width/2, delta:Math.abs(a.y+a.height/2-b.y-b.height/2), width:a.width,height:a.height};
+  }));
+  assert.ok(entries.length>0); for (const e of entries) { assert.ok(e.delta<=2, name+' '+JSON.stringify(e)); assert.ok(e.width>=44 && e.height>=44); }
+  if (await page.evaluate(()=>innerWidth<=850)) assert.ok(Math.max(...entries.map(e=>e.x))-Math.min(...entries.map(e=>e.x))<=2, 'common axis '+name);
+  await fsEvidence(name, entries); return entries;
+}
+async function fsEvidence(name, value) { const {writeFile}=await import('node:fs/promises'); await writeFile('artifacts/phase5-'+name+'.json',JSON.stringify(value,null,2)); }
+
+test('Phase 5 AC01/02/10/11/12: flat maximum hierarchy, native headings, rail and real time rules', async t => {
+  const {page}=await open(t,{payload:phase5Fixture,minimal:true,initScript:geoSuccess});
+  assert.equal(await page.locator('.map-panel').getAttribute('data-mode'),'minimal'); assert.equal(await page.locator('#map').isVisible(),false);
+  assert.equal(await page.locator('.select-toggle').first().isVisible(),false); assert.equal(await page.locator('.activate-candidate').count(),0);
+  assert.equal(await card(page,'p5-street').isVisible(),true); assert.equal(await own(page,'p5-series','.details-toggle').getAttribute('aria-expanded'),'false');
+  const lefts=await page.locator('[data-id="p5-series"], [data-id="p5-free"], [data-id="p5-street"]').evaluateAll(els=>els.map(el=>el.getBoundingClientRect().left)); assert.ok(Math.max(...lefts)-Math.min(...lefts)<=2);
+  assert.equal(await page.locator('[data-rail-id="p5-street"]').count(),0); assert.match(await card(page,'p5-street').innerText(),/0 JPY/);
+  assert.match(await card(page,'p5-lunch').innerText(),/予約必要.*未完了/);
+  assert.match(await card(page,'p5-noend').locator('.time').textContent(),/^14:00$/); assert.match(await card(page,'p5-all').locator('.time').textContent(),/終日/);
+  assert.match(await card(page,'p5-night').locator('.time').textContent(),/23:30.*10\/10.*01:00/);
+  await measureRail(page,'normal-rail');
+  await page.screenshot({path:'artifacts/phase5-normal.png'});
+  await own(page,'p5-visit','.details-toggle').click(); await measureRail(page,'detail-rail');
+  await own(page,'p5-visit','.details-toggle').click(); await card(page,'p5-free').scrollIntoViewIfNeeded();
+  await page.screenshot({path:'artifacts/phase5-maximum-hierarchy.png'}); assert.equal(await page.evaluate(()=>__geoCalls),0);
+});
+
+test('Phase 5 AC02/04/05/06/09/13/16: all candidate structures, focus isolation and scene return state', async t => {
+  const {page}=await open(t,{payload:phase5Fixture,minimal:true,initScript:geoSuccess});
+  await own(page,'p5-visit','.card-focus').click(); await own(page,'p5-visit','.details-toggle').click(); await own(page,'p5-visit','.select-toggle').click();
+  await page.screenshot({path:'artifacts/phase5-comparison.png'});
+  await page.locator('.nav-compare').click(); assert.equal(await own(page,'p5-visit','.select-toggle').isVisible(),false); assert.match(await page.locator('.nav-compare').innerText(),/1件/);
+  await page.locator('[data-scene="p5-series"]').scrollIntoViewIfNeeded();
+  const parentTop=await card(page,'p5-group').evaluate(el=>el.getBoundingClientRect().top-document.querySelector('.timeline-panel').getBoundingClientRect().top);
+  await page.locator('[data-scene="p5-series"]').click(); assert.equal(await selected(page),'p5-visit'); assert.equal(await page.locator('[data-id="p5-lunch"]').count(),0);
+  assert.equal(await page.locator('.days').isVisible(),false); assert.equal(await own(page,'p5-visit','.details-toggle').getAttribute('aria-expanded'),'true');
+  await page.screenshot({path:'artifacts/phase5-fullscreen.png'}); await measureRail(page,'scene-rail');
+  await page.getByRole('button',{name:'午前の過ごし方の次の候補',exact:true}).click(); await page.clock.runFor(600);
+  assert.equal(await p5Active(page),'p5-item'); assert.equal(await selected(page),'p5-item'); assert.equal(await checkState(page,'p5-visit'),'true');
+  assert.equal(await page.locator('[data-candidate="p5-series"]').evaluate(el=>el.inert),true);
+  await measureRail(page,'switched-rail'); await page.screenshot({path:'artifacts/phase5-switched.png'});
+  await page.locator('.nav-map').click(); await page.locator('[data-mode="expanded"]').click(); await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#app').getAttribute('data-scene'),'true'); assert.equal(await page.locator('.map-panel').getAttribute('data-mode'),'standard');
+  await page.locator('.scene-back').click(); assert.equal(await p5Active(page),'p5-item'); assert.equal(await page.locator('.map-panel').getAttribute('data-mode'),'standard');
+  assert.ok(Math.abs(await card(page,'p5-group').evaluate(el=>el.getBoundingClientRect().top-document.querySelector('.timeline-panel').getBoundingClientRect().top)-parentTop)<3);
+  for (const id of ['p5-item','p5-choice-free']) { await setCandidate(page,id); await page.locator('[data-scene="'+id+'"]').click(); assert.equal(await page.locator('#app').getAttribute('data-scene'),'true'); await page.keyboard.press('Escape'); }
+  await page.locator('[data-scene="p5-solo"]').click(); assert.equal(await card(page,'p5-noend').isVisible(),true); await page.locator('.nav-itinerary').click();
+  assert.equal(await page.locator('#app').getAttribute('data-scene'),'false'); assert.equal(await page.evaluate(()=>__geoCalls),0);
+});
+
+test('Phase 5 AC03/04: real touch horizontal vs vertical vs title tap; hidden candidates never take Tab',async t=>{
+  const {page,context}=await open(t,{payload:phase5Fixture,minimal:true}); const carousel=page.locator('.group-candidates[data-group="p5-group"]');
+  await carousel.scrollIntoViewIfNeeded(); const r=await carousel.boundingBox(), panel=await page.locator('.timeline-panel').boundingBox(), y=Math.min(panel.y+panel.height-70,Math.max(r.y,panel.y)+90);
+  const cdp=await context.newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:r.x+r.width*.85,y}]});
+  for(let i=1;i<=8;i++){await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:r.x+r.width*(.85-.7*i/8),y}]});await new Promise(resolve=>setTimeout(resolve,25));}
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await page.clock.runFor(700);
+  assert.equal(await p5Active(page),'p5-item');assert.equal(await page.locator('#app').getAttribute('data-scene'),'false');
+  await carousel.scrollIntoViewIfNeeded(); const verticalRect=await carousel.boundingBox(), verticalY=Math.min(panel.y+panel.height-50,Math.max(verticalRect.y,panel.y)+140);
+  const before=await page.locator('.timeline-panel').evaluate(el=>el.scrollTop);
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:verticalRect.x+verticalRect.width/2,y:verticalY}]});
+  for(let i=1;i<=8;i++){await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:verticalRect.x+verticalRect.width/2,y:verticalY-i*15}]});await new Promise(resolve=>setTimeout(resolve,25));}
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await page.clock.runFor(700);
+  assert.equal(await p5Active(page),'p5-item');assert.ok(await page.locator('.timeline-panel').evaluate(el=>el.scrollTop)>before);assert.equal(await page.locator('#app').getAttribute('data-scene'),'false');
+  await carousel.focus();await page.keyboard.press('End');await page.clock.runFor(500);assert.equal(await p5Active(page),'p5-choice-free');
+  await carousel.focus();for(let i=0;i<18;i++){await page.keyboard.press('Tab');assert.equal(await page.evaluate(()=>Boolean(document.activeElement.closest('[inert]'))),false);}
+  await carousel.focus();await page.keyboard.press('Home');await page.clock.runFor(500);assert.equal(await p5Active(page),'p5-series');
+  await page.locator('[data-scene="p5-series"]').tap();assert.equal(await page.locator('#app').getAttribute('data-scene'),'true');await cdp.detach();
+});
+
+test('Phase 5 AC07/08/12: scene removed or filtered resolves to day, filter/notice remain outside menu',async t=>{
+  const {page,context}=await open(t,{payload:phase5Fixture,minimal:true}); await setCandidate(page,'p5-item');await page.locator('[data-scene="p5-item"]').click();
+  const next=structuredClone(phase5Fixture);next.generatedAt='2026-10-10T00:00:00Z';next.items=next.items.filter(i=>i.id!=='p5-item');
+  await context.route('**/api/refresh?*',route=>route.fulfill({contentType:'application/json',headers:{'X-Itinerary-Cache':'refreshed'},body:JSON.stringify(next)}));
+  await page.locator('.publish-button').click();await page.locator('.publish-status').filter({hasText:'最新の旅程'}).waitFor();
+  assert.equal(await page.locator('#app').getAttribute('data-scene'),'false');assert.match(await page.locator('.focus-status').innerText(),/削除|表示対象/);
+  await page.locator('[data-scene="p5-solo"]').click();await page.locator('.filter-panel > summary').click();await page.locator('[data-filter="type"][value="Meal"]').check();await page.locator('.close-menu').click();
+  assert.equal(await page.locator('#app').getAttribute('data-scene'),'false');assert.match(await page.locator('.comparison-status').innerText(),/フィルター中/);
+  await page.locator('.clear-filters').click();while(await page.locator('.menu-content > details[open] > summary').count())await page.locator('.menu-content > details[open] > summary').first().click();await page.locator('.close-menu').scrollIntoViewIfNeeded();await page.screenshot({path:'artifacts/phase5-other-menu.png'});
+  await page.locator('.close-menu').click();await page.locator('.nav-map').click();await page.screenshot({path:'artifacts/phase5-standard-map.png'});
+  await noOverflow(page);
+});
+
+test('Phase 5 AC02/09/10/13/14: one filtered candidate, desktop parallel axes and responsive text/height',async t=>{
+  const {page}=await open(t,{payload:phase5Fixture,minimal:true});await page.locator('.filter-panel > summary').click();await page.locator('[data-filter="type"][value="Activity"]').check();await page.locator('.close-menu').click();
+  // Two matching branches initially; status narrows to the single Item candidate.
+  await page.locator('[data-filter="status"][value="Tentative"]').check();await page.locator('.close-menu').click();
+  assert.equal(await page.locator('.candidate-slot').count(),1);assert.equal(await page.locator('.candidate-controls').isVisible(),false);
+  await page.locator('.clear-filters').click();await page.locator('.close-menu').click();
+  for(const viewport of [{width:320,height:844},{width:390,height:844},{width:390,height:450},{width:1440,height:900}]){
+    await page.setViewportSize(viewport);await page.clock.runFor(400);await noOverflow(page);await measureRail(page,'rail-'+viewport.width+'x'+viewport.height);
+    const layout=await page.evaluate(()=>({bar:document.querySelector('.menu-bar').getBoundingClientRect().toJSON(),body:document.querySelector('.timeline-panel').getBoundingClientRect().toJSON(),height:innerHeight}));assert.ok(Math.abs(layout.bar.bottom-layout.height)<=1 && layout.body.bottom<=layout.bar.top+1,'bar below content '+JSON.stringify(layout));
+    if(viewport.width===1440){const xs=await page.locator('.rail-event').evaluateAll(es=>[...new Set(es.map(e=>Math.round(e.getBoundingClientRect().x)))]);assert.ok(xs.length>=3,'desktop has separate comparison axes');await page.screenshot({path:'artifacts/phase5-desktop.png'});}
+  }
+  await page.setViewportSize({width:320,height:844});await page.addStyleTag({content:'html {font-size:200%}'});await page.evaluate(()=>window.dispatchEvent(new Event('resize')));await page.clock.runFor(500);await noOverflow(page);await measureRail(page,'rail-200');
+  await page.screenshot({path:'artifacts/phase5-320-text-200.png'});
+  await page.locator('.nav-compare').click();await own(page,'p5-group','.select-toggle').click();await page.locator('.nav-map').click();await page.locator('[data-mode="expanded"]').click();await page.clock.runFor(300);
+  const enlarged=await page.evaluate(()=>({map:document.querySelector('.map-panel').getBoundingClientRect().toJSON(),bar:document.querySelector('.menu-bar').getBoundingClientRect().toJSON()}));assert.ok(enlarged.map.bottom<=enlarged.bar.top+1,'expanded map leaves actual enlarged menu height '+JSON.stringify(enlarged));await noOverflow(page);await page.keyboard.press('Escape');
+});
+
+
+test('Phase 5 AC06/08/09/12: scene retains latest filters, time, details and comparison independently',async t=>{
+  const {page}=await open(t,{payload:phase5Fixture,minimal:true});
+  await page.locator('.show-cancelled').check();await page.locator('.time-start').fill('570');await page.locator('.time-end').fill('690');await page.locator('.close-menu').click();
+  await own(page,'p5-visit','.select-toggle').click();await own(page,'p5-visit','.details-toggle').click();await page.locator('[data-scene="p5-series"]').click();
+  await page.getByRole('button',{name:'午前の過ごし方の次の候補',exact:true}).click();await page.clock.runFor(500);
+  await page.locator('.time-end').fill('720');await page.locator('.close-menu').click();await page.keyboard.press('Escape');
+  assert.equal(await p5Active(page),'p5-item');assert.equal(await page.locator('.candidate-slot').count(),4);assert.equal(await page.locator('.show-cancelled').isChecked(),true);
+  assert.equal(await page.locator('.time-start').inputValue(),'570');assert.equal(await page.locator('.time-end').inputValue(),'720');assert.equal(await own(page,'p5-visit','.details-toggle').getAttribute('aria-expanded'),'true');assert.equal(await checkState(page,'p5-visit'),'true');
+  assert.match(await page.locator('.comparison-status').innerText(),/フィルター中/);await page.locator('.nav-compare').click();assert.match(await page.locator('.nav-compare').innerText(),/1件/);
 });

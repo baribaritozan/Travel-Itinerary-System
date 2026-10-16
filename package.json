@@ -8,7 +8,8 @@
     "dev": "npm run build && npx wrangler dev",
     "test": "node --test",
     "test:browser": "npm run build && node --test scripts/browser-check.mjs",
-    "test:pwa": "npm run build && node scripts/recovery-build.mjs && node --test scripts/pwa-check.mjs",
+    "test:pwa": "npm run build && node scripts/recovery-build.mjs && node scripts/phase5-legacy-build.mjs && node --test scripts/pwa-check.mjs",
+    "preview:phase5": "npm run build && node scripts/phase5-preview.mjs",
     "build:recovery": "node scripts/recovery-build.mjs"
   },
   "engines": {

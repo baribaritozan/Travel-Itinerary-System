@@ -11,9 +11,9 @@ const mobile = () => matchMedia("(max-width: 850px)").matches;
 const labels = { Transit: "移動", Activity: "活動", Sightseeing: "観光", Meal: "食事", Stay: "宿泊", Meeting: "集合", Note: "メモ", Confirmed: "確定", Tentative: "暫定", Candidate: "候補", Cancelled: "中止", Walk: "徒歩", Train: "電車", Bus: "バス", Car: "車", Ferry: "フェリー", Required: "予約必要", Pending: "手配中", Booked: "予約完了", Completed: "予約完了", "Not Required": "予約不要" };
 const label = (value) => labels[value] || value;
 // Focus, details, comparison and map time have independent state owners.
-const state = { selectedDay: null, focusedItemId: null, expandedItemIds: new Set(), mapPanelMode: "standard", focusSource: null, selectedIds: new Set(), activeCandidateByGroup: new Map(), filters: defaultFilters(), mapTimeRange: null };
+const state = { selectedDay: null, focusedItemId: null, expandedItemIds: new Set(), mapPanelMode: "minimal", focusSource: null, selectedIds: new Set(), activeCandidateByGroup: new Map(), filters: defaultFilters(), mapTimeRange: null, comparisonMode: false, scene: null };
 let data, places, days, visibleItems = [], map, layerGroup;
-let tree, visibleRoots = [], geographicItems = [];
+let tree, visibleRoots = [], browsingRoots = [], geographicItems = [];
 let itemLayers = new Map(), markers = [], bounds = [];
 let scrollTimer, programmaticScroll = false, cooldownUntil = 0, refreshing = false, needsFit = false;
 let suppressScrollFocus = false;
@@ -23,6 +23,8 @@ let currentLocation = null, locationLayer, locationBusy = false, locationMessage
 let locationExpiryTimer;
 let savedRecord = null, storageMessage = "", networkState = "通信を確認中", lastCache = "hit", offlineDisplay = false;
 let waitingRegistration, deferredInstall, storageBusy = false, requestSequence = 0, initialized = false, shellReady = false;
+let parentAnchor = null, mapReturnMode = "standard", railObserver, railFrame;
+let shellAbort, shellLayoutObserver;
 const transportText = item => `${({ Walk: "🚶", Train: "🚆", Bus: "🚌", Car: "🚗", Ferry: "⛴" }[item.transport] || "↔")} ${label(item.transport) || "移動手段未設定"}`;
 
 function link(url, text) {
@@ -31,6 +33,7 @@ function link(url, text) {
 }
 
 function setupShell() {
+  shellAbort?.abort(); shellLayoutObserver?.disconnect(); shellAbort = new AbortController();
   app.className = "shell";
   app.innerHTML = `<section class="timeline-panel" aria-label="旅程">
     <header><div class="eyebrow">Travel itinerary</div><h1></h1><p class="meta"></p>
@@ -75,8 +78,30 @@ function setupShell() {
           <button type="button" data-mode="expanded" aria-pressed="false">拡大</button>
         </div><button type="button" class="show-all" disabled>全体を表示</button>
       </div></section>`;
+  app.insertAdjacentHTML("beforeend", `<nav class="menu-bar" aria-label="表示と操作"><button type="button" class="nav-itinerary" aria-pressed="true">旅程</button><button type="button" class="nav-map" aria-pressed="false">地図</button><button type="button" class="nav-compare" aria-pressed="false">比較<span class="selection-count"></span></button><button type="button" class="nav-more" aria-haspopup="dialog"><span>その他</span><small class="menu-alert" hidden></small></button></nav>
+    <dialog class="more-menu" aria-labelledby="more-title"><div class="menu-heading"><h2 id="more-title">その他</h2><button type="button" class="close-menu">閉じる</button></div><div class="menu-content"></div></dialog>`);
   timeline = app.querySelector(".timeline-panel"); itemsElement = app.querySelector(".items");
   mapPanel = app.querySelector(".map-panel"); statusElement = app.querySelector(".publish-status");
+  timeline.insertBefore(statusElement, itemsElement);
+  const menu = app.querySelector(".menu-content");
+  for (const selector of [".filter-panel", ".time-panel", ".offline-panel"]) menu.append(app.querySelector(selector));
+  menu.insertAdjacentHTML("beforeend", '<details class="display-panel"><summary>表示操作</summary></details><details class="trip-info"><summary>旅行情報・更新</summary></details>');
+  menu.querySelector(".display-panel").append(app.querySelector(".collapse-all"), app.querySelector(".timeline-key"));
+  menu.querySelector(".trip-info").append(app.querySelector(".sync-row"));
+  mapPanel.append(app.querySelector(".location-panel"));
+  timeline.querySelector("header").classList.add("day-chrome"); app.querySelector(".days").classList.add("day-chrome");
+  timeline.insertAdjacentHTML("afterbegin", '<button type="button" class="scene-back" hidden>‹ 一日の旅程に戻る</button>');
+  itemsElement.insertAdjacentHTML("beforebegin", '<p class="state-notice" role="status" aria-live="polite" hidden></p><div class="comparison-tools" hidden></div>');
+  app.querySelector(".comparison-tools").append(app.querySelector(".clear-selection"), app.querySelector(".selected-only").closest("label"));
+  app.querySelector(".timeline-tools").classList.add("sr-only");
+  const more = app.querySelector(".more-menu");
+  app.querySelector(".nav-more").addEventListener("click", () => more.showModal());
+  app.querySelector(".close-menu").addEventListener("click", () => more.close());
+  app.querySelector(".nav-compare").addEventListener("click", () => { state.comparisonMode = !state.comparisonMode; paintModes(); scheduleRail(); });
+  app.querySelector(".nav-map").addEventListener("click", () => setMapMode(state.mapPanelMode === "minimal" ? "standard" : "minimal"));
+  app.querySelector(".nav-itinerary").addEventListener("click", () => { if (state.mapPanelMode === "expanded") setMapMode(mapReturnMode); if (state.scene) closeScene(); });
+  app.querySelector(".scene-back").addEventListener("click", closeScene);
+  document.addEventListener("keydown", event => { if (event.key !== "Escape" || more.open) return; if (state.mapPanelMode === "expanded") { event.preventDefault(); setMapMode(mapReturnMode); } else if (state.scene) { event.preventDefault(); closeScene(); } }, { signal: shellAbort.signal });
   publishButton = app.querySelector(".publish-button");
   publishButton.addEventListener("click", refresh);
   app.querySelector(".save-offline").addEventListener("click", enableSaving);
@@ -94,7 +119,7 @@ function setupShell() {
   app.querySelector(".collapse-all").addEventListener("click", () => {
     state.expandedItemIds.clear();
     itemsElement.querySelectorAll(".details-toggle").forEach((button) => setExpanded(button, false));
-    renderMap(false); paintFocus();
+    renderMap(false); paintFocus(); scheduleRail();
   });
   mapPanel.querySelectorAll(".panel-modes button").forEach((button) => button.addEventListener("click", () => setMapMode(button.dataset.mode)));
   app.querySelector(".show-all").addEventListener("click", fitDay);
@@ -110,22 +135,32 @@ function setupShell() {
     }, 160);
   }, { passive: true });
   for (const event of ["pointerdown", "focusin"]) timeline.addEventListener(event, (event) => {
-    if (event.target.closest(".filter-panel, .time-panel, .publish-button, .select-toggle, .activate-candidate, .candidate-controls, .clear-selection")) { suppressScrollFocus = true; clearTimeout(scrollTimer); }
+    if (event.target.closest(".filter-panel, .time-panel, .publish-button, .select-toggle, .scene-open, .candidate-controls, .clear-selection")) { suppressScrollFocus = true; clearTimeout(scrollTimer); }
   });
-  for (const event of ["wheel", "touchmove"]) timeline.addEventListener(event, (event) => { if (event.target.closest(".group-candidates") && event.type === "touchmove") return; programmaticScroll = false; suppressScrollFocus = false; }, { passive: true });
+  for (const event of ["wheel", "touchmove"]) timeline.addEventListener(event, () => { programmaticScroll = false; suppressScrollFocus = false; }, { passive: true });
   timeline.addEventListener("keydown", (event) => {
     if (["PageDown", "PageUp", "ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) && !event.target.closest("input, .group-candidates")) { programmaticScroll = false; suppressScrollFocus = false; }
   });
   window.addEventListener("resize", () => {
     timeline.inert = mobile() && state.mapPanelMode === "expanded";
     updateCompactMap();
+    itemsElement.querySelectorAll(".group-candidates").forEach(carousel => { const active = carousel.querySelector(`[data-candidate="${CSS.escape(state.activeCandidateByGroup.get(carousel.dataset.group))}"]`); if (active) carousel.scrollLeft = active.offsetLeft - carousel.firstElementChild.offsetLeft; });
+    setupCandidateVisibility(); scheduleRail();
     map?.invalidateSize({ pan: false });
+    if (needsFit) requestAnimationFrame(fitDay);
+  }, { signal: shellAbort.signal });
+  shellLayoutObserver = new ResizeObserver(() => {
+    const bar = app.querySelector('.menu-bar'); if (!bar) return;
+    app.style.setProperty('--menu-height', `${bar.offsetHeight}px`);
+    updateCompactMap(); if (state.mapPanelMode === 'expanded') map?.invalidateSize({ pan: false });
   });
-  const resizeObserver = new ResizeObserver(updateCompactMap);
-  resizeObserver.observe(mapPanel.querySelector(".map-controls"));
+  shellLayoutObserver.observe(mapPanel.querySelector(".map-controls"));
+  shellLayoutObserver.observe(app.querySelector('.menu-bar'));
   mapPanel.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") { setMapMode("standard"); app.querySelector('button[data-mode="expanded"]').focus(); }
+    if (event.key === "Escape") { event.stopPropagation(); setMapMode(mapReturnMode); app.querySelector('.nav-map').focus(); }
   });
+  railObserver?.disconnect(); railObserver = new ResizeObserver(renderRail); railObserver.observe(itemsElement);
+  setMapMode(state.mapPanelMode); paintModes();
 }
 
 function updateCompactMap() {
@@ -136,11 +171,106 @@ function updateCompactMap() {
 }
 
 function setMapMode(mode) {
+  if (mode === "expanded" && state.mapPanelMode !== "expanded") mapReturnMode = state.mapPanelMode;
   state.mapPanelMode = mode; mapPanel.dataset.mode = mode;
   timeline.inert = mobile() && mode === "expanded";
   updateCompactMap();
+  paintModes();
   mapPanel.querySelectorAll(".panel-modes button").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.mode === mode)));
   requestAnimationFrame(() => { map?.invalidateSize({ pan: false }); if (needsFit) fitDay(); });
+}
+
+function itemTime(item) {
+  if (!item.start) return "時刻未定";
+  const zone = data.trip.timezone, startDay = dayInZone(item.start, zone), endDay = dayInZone(item.end, zone);
+  const start = `${startDay !== state.selectedDay ? `${formatDay(startDay)} ` : ""}${formatTime(item.start, zone)}`;
+  if (!item.end || item.end === item.start) return start;
+  if (!item.start.includes("T") && startDay === endDay) return start;
+  return `${start} – ${endDay !== startDay ? `${formatDay(endDay)} ` : ""}${formatTime(item.end, zone)}`;
+}
+
+function paintModes() {
+  app.dataset.compare = String(state.comparisonMode); app.dataset.scene = String(Boolean(state.scene));
+  app.querySelector(".comparison-tools").hidden = !state.comparisonMode;
+  app.querySelector(".scene-back").hidden = !state.scene;
+  app.querySelector(".nav-compare").setAttribute("aria-pressed", String(state.comparisonMode));
+  app.querySelector(".nav-map").setAttribute("aria-pressed", String(state.mapPanelMode !== "minimal"));
+  app.querySelector(".selection-count").textContent = state.selectedIds.size ? ` ${state.selectedIds.size}件` : "";
+}
+
+function paintNoticeBadge() {
+  const badge = app.querySelector('.menu-alert'); if (!badge) return;
+  const text = networkState === '圏外・通信失敗' ? '圏外' : savedRecord && !savedRecord.payload ? '期限切れ' : waitingRegistration?.waiting ? '更新待機' : /Quota|denied|Error|できません|失敗|容量|禁止/i.test(storageMessage) ? '保存失敗' : statusElement?.classList.contains('warning') ? '更新の注意' : filtersActive(state.filters) ? '絞り込み中' : '';
+  badge.textContent = text; badge.hidden = !text;
+}
+
+function openScene(id) {
+  const target = visibleItems.find(item => item.id === id);
+  if (!target || state.scene) return;
+  const rootId = tree.byId.get(target.parentId)?.structure === "Alternative Group" ? target.parentId : id;
+  const root = itemsElement.querySelector(`.item[data-id="${CSS.escape(rootId)}"]`);
+  parentAnchor = { id: rootId, offset: root.getBoundingClientRect().top - timeline.getBoundingClientRect().top, scrollTop: timeline.scrollTop };
+  state.scene = { id, rootId }; suppressScrollFocus = true; clearTimeout(scrollTimer);
+  renderItems({ fit: false }); timeline.scrollTop = 0; app.querySelector(".scene-back").focus({ preventScroll: true });
+}
+
+function closeScene(message = "") {
+  if (!state.scene) return;
+  const scene = state.scene; state.scene = null; suppressScrollFocus = true; clearTimeout(scrollTimer);
+  renderItems({ fit: false });
+  restoreParent();
+  (itemsElement.querySelector(`[data-scene="${CSS.escape(scene.id)}"]`) || app.querySelector(".nav-itinerary")).focus({ preventScroll: true });
+  if (typeof message === "string" && message) app.querySelector(".focus-status").textContent = message;
+}
+
+function restoreParent() {
+  if (!parentAnchor) return;
+  const root = itemsElement.querySelector(`.item[data-id="${CSS.escape(parentAnchor.id)}"]`);
+  timeline.scrollTop = root ? timeline.scrollTop + root.getBoundingClientRect().top - timeline.getBoundingClientRect().top - parentAnchor.offset : parentAnchor.scrollTop;
+  parentAnchor = null;
+}
+
+// The native carousel clips its contents. Place the common rail outside it so
+// every hierarchy uses the same axis, while desktop comparison gets one per column.
+function scheduleRail() {
+  cancelAnimationFrame(railFrame); railFrame = requestAnimationFrame(renderRail);
+}
+function renderRail() {
+  if (!itemsElement?.isConnected) return;
+  itemsElement.querySelectorAll(".group-candidates").forEach(carousel => {
+    const slot = carousel.querySelector(`[data-candidate="${CSS.escape(state.activeCandidateByGroup.get(carousel.dataset.group))}"]`);
+    carousel.style.height = mobile() && slot ? `${slot.offsetHeight}px` : "";
+  });
+  const origin = itemsElement.getBoundingClientRect();
+  let rail = itemsElement.querySelector(":scope > .rail-layer");
+  if (!rail) { rail = document.createElement("div"); rail.className = "rail-layer"; itemsElement.append(rail); }
+  const entries = [...itemsElement.querySelectorAll('.item[data-timed="true"]')].filter(cardIsDisplayed).map(card => {
+    const title = card.querySelector(":scope > .card-heading .item-title").getBoundingClientRect();
+    const slot = !mobile() && card.closest(".candidate-slot");
+    const x = slot ? card.getBoundingClientRect().left - origin.left - 16 : -16;
+    return { card, x, y: title.top + title.height / 2 - origin.top };
+  });
+  const lines = entries.map((entry, index) => {
+    const next = entries.slice(index + 1).find(other => Math.abs(other.x - entry.x) < 2);
+    return next ? `<span class="rail-line ${entry.card.classList.contains("same-place") ? "same-place" : ""}" style="left:${entry.x}px;top:${entry.y}px;height:${next.y - entry.y}px" aria-hidden="true"></span>` : "";
+  }).join("");
+  let lineLayer = rail.querySelector('.rail-lines');
+  if (!lineLayer) { lineLayer = document.createElement('div'); lineLayer.className = 'rail-lines'; rail.prepend(lineLayer); }
+  lineLayer.innerHTML = lines;
+  const ids = new Set(entries.map(entry => entry.card.dataset.id));
+  rail.querySelectorAll('.rail-event').forEach(event => { if (!ids.has(event.dataset.eventId)) event.remove(); });
+  entries.forEach(({ card, x, y }) => {
+    const item = tree.byId.get(card.dataset.id), point = card.dataset.point === "true";
+    let event = rail.querySelector(`[data-event-id="${CSS.escape(item.id)}"]`);
+    if (!event) {
+      event = document.createElement('div'); event.className = 'rail-event'; event.dataset.eventId = item.id;
+      event.innerHTML = `<span class="rail-time" aria-hidden="true"></span><button type="button" class="timeline-node ${point ? "point" : "activity"}" data-rail-id="${esc(item.id)}"><span aria-hidden="true"></span></button>`;
+      event.querySelector('button').addEventListener('click', () => focusItem(item.id, 'card')); rail.append(event);
+    }
+    event.style.left = `${x}px`; event.style.top = `${y}px`;
+    event.querySelector('.rail-time').innerHTML = esc(itemTime(item)).replace(' – ', '<br>– ');
+    const button = event.querySelector('button'); button.setAttribute('aria-label', `${itemTime(item)} ${item.title}にフォーカス（${point ? '地点' : '活動'}）`); button.setAttribute('aria-pressed', String(state.focusedItemId === item.id));
+  });
 }
 
 function updateData(next) {
@@ -159,7 +289,7 @@ function updateData(next) {
 
 function renderDays() {
   const nav = app.querySelector(".days");
-  nav.innerHTML = days.map((day, index) => `<button class="day-button" type="button" data-day="${esc(day)}" aria-pressed="${day === state.selectedDay}">Day ${index + 1} · ${esc(formatDay(day))}</button>`).join("");
+  nav.innerHTML = days.map((day, index) => `<button class="day-button" type="button" data-day="${esc(day)}" aria-label="Day ${index + 1} · ${esc(formatDay(day))}" aria-pressed="${day === state.selectedDay}">${esc(formatDay(day).replace(/^\d+\//, ''))}</button>`).join("");
   nav.querySelectorAll("button").forEach((button, index) => {
     button.addEventListener("click", () => selectDay(button.dataset.day));
     button.addEventListener("keydown", (event) => {
@@ -172,6 +302,7 @@ function renderDays() {
 
 function selectDay(day) {
   if (day === state.selectedDay) return;
+  if (state.scene) { state.scene = null; parentAnchor = null; app.querySelector(".focus-status").textContent = "日付が変わったため、一日の旅程に戻りました。"; }
   state.selectedDay = day; state.focusedItemId = null; clearTimeout(scrollTimer);
   state.mapTimeRange = null;
   renderDays(); renderItems(); programmaticScroll = true; timeline.scrollTop = 0;
@@ -204,30 +335,35 @@ function cardHtml(item, index, siblings, nested = false) {
     const at = item.type === "Transit" ? item.fromId : item.placeId;
     const connection = next && at && at === (next.type === "Transit" ? next.fromId : next.placeId) ? "same-place" : "moving";
     const point = ["Sightseeing", "Stay", "Meeting", "Place", "観光", "宿泊", "集合"].includes(item.type);
-    const time = item.start ? formatTime(item.start, data.trip.timezone) : "時刻未定";
-    const end = item.end ? ` – ${formatTime(item.end, data.trip.timezone)}` : Number.isFinite(item.durationMinutes) ? ` · ${esc(item.durationMinutes)}分` : "";
+    const time = itemTime(item);
     const missing = itemPlaces(item, places).filter(hasCoordinates).length < (item.type === "Transit" ? 2 : 1);
     const container = structureOf(item) !== "Item";
     const selection = selectionState(tree.byId.get(item.id), state.selectedIds);
     const flexibleChild = tree.byId.get(item.parentId)?.structure === "Flexible Block";
+    const candidate = tree.byId.get(item.parentId)?.structure === "Alternative Group";
+    const sceneEntry = candidate || item.structure === "Series" && !item.parentId;
     const children = item.structure === "Alternative Group" ? candidateHtml(item) : item.structure === "Series" ? `<div class="series-timeline" aria-label="${esc(item.title)}の子タイムライン">${item.children.map((child, i) => cardHtml(child, i, item.children, true)).join("")}</div>` : item.structure === "Flexible Block" ? `<div class="flexible-candidates" role="group" aria-label="${esc(item.title)}の時刻未定候補">${item.children.map((child, i) => cardHtml(child, i, item.children, true)).join("")}</div>` : "";
     const detours = item.detours?.length ? `<section class="detour-routes" aria-label="${esc(item.title)}の寄り道"><h3>任意の寄り道</h3>${item.detours.map((child, i) => cardHtml(child, i, item.detours, true)).join("")}</section>` : "";
     const detourInfo = item.detourForId ? `<div class="detour-facts"><p>追加所要時間：${esc(item.additionalDurationMinutes)}分</p><p>復帰地点：${esc(places.get(item.rejoinPlaceId || tree.byId.get(item.detourForId)?.toId)?.name || "未設定")}</p><p data-detour-assessment="${esc(item.id)}">${esc(detourAssessment(item, tree.byId.get(item.detourForId), tree, state.activeCandidateByGroup).text)}</p><p>登録値による目安です。交通状況・営業時間・待ち時間は保証しません。</p></div>` : "";
-    return `<article class="item ${connection} ${nested ? "nested-item" : ""} ${container ? "container-item" : ""}" data-id="${esc(item.id)}" aria-label="${esc(item.title)}">
-      ${flexibleChild ? "" : `<button type="button" class="timeline-node ${point ? "point" : "activity"}" data-focus="${esc(item.id)}" aria-label="${esc(item.title)}にフォーカス（${point ? "地点" : "活動"}）" aria-pressed="false"><span aria-hidden="true"></span></button>`}
-      <button type="button" class="card-focus" data-focus="${esc(item.id)}" aria-pressed="false">
-        <span class="time"><time datetime="${esc(item.start)}">${esc(time)}</time>${end}</span><span class="item-title">${esc(item.title)}</span>
-        <span class="badges">${[container ? ({ Series: "系列", "Flexible Block": "自由時間", "Alternative Group": "候補グループ" }[item.structure]) : null, item.type, item.status, item.transport, item.reservationStatus].filter(Boolean).map((value) => `<span class="badge">${esc(label(value))}</span>`).join("")}</span>
+    return `<article class="item ${connection} ${nested ? "nested-item" : ""} ${container ? "container-item" : ""} ${flexibleChild ? "untimed-candidate" : ""} ${item.structure === "Flexible Block" ? "free-block" : ""}" data-id="${esc(item.id)}" data-point="${point}" data-timed="${Boolean(item.start) && !flexibleChild}" aria-label="${esc(item.title)}">
+      <div class="card-heading">
+      <button type="button" class="${sceneEntry ? "scene-open" : "card-focus"}" ${sceneEntry ? `data-scene="${esc(item.id)}" aria-label="${esc(item.title)}を全画面で表示"` : `data-focus="${esc(item.id)}" aria-pressed="false"`}>
+        ${candidate ? '<span class="candidate-label">表示中の案</span>' : ""}<span class="time sr-only">${esc(time)}</span><span class="item-title">${esc(item.title)}</span>${sceneEntry ? '<span class="scene-icon" aria-hidden="true">↗</span>' : ""}
+        <span class="badges">${[item.transport || item.type, ["Tentative", "Candidate", "Cancelled"].includes(item.status) ? item.status : null, Number.isFinite(item.durationMinutes) ? `${item.durationMinutes}分` : null, item.openingHours ? `営業 ${item.openingHours}` : null].filter(Boolean).map((value) => `<span class="badge">${esc(label(value))}</span>`).join(" · ")}</span>
         ${Number.isFinite(item.perPersonCost) || Number.isFinite(item.totalCost) ? `<span class="summary-cost">${Number.isFinite(item.perPersonCost) ? `1人 ${cost(item.perPersonCost, item.currency)}` : `全体 ${cost(item.totalCost, item.currency)}`}</span>` : ""}
       </button>
+      ${["Required", "Pending"].includes(item.reservationStatus) ? `<p class="reservation-warning">${esc(label(item.reservationStatus))} · 未完了</p>` : ""}
+      ${item.reservationStatus && !["Required", "Pending"].includes(item.reservationStatus) ? `<span class="reservation-info">${esc(label(item.reservationStatus))}</span>` : ""}
       ${missing && !container ? '<p class="location-warning">地図に表示できる位置情報がありません。</p>' : ""}
-      ${item.type === "Transit" ? '<p class="route-note">地図の破線は概略線です。</p>' : ""}
-      ${item.parentId && tree.byId.get(item.parentId)?.structure === "Alternative Group" ? comparisonHtml(item) : ""}
+      ${item.structure === "Flexible Block" ? '<p class="flexible-note">この時間内で立ち寄れる候補 · 時刻未定</p>' : ""}
       ${detourInfo}
+      ${sceneEntry && !item.start ? `<button type="button" class="branch-focus" data-focus="${esc(item.id)}">この案を地図で注目</button>` : ""}
+      </div>
       <button type="button" class="details-toggle" aria-expanded="${expanded}" aria-controls="details-${esc(item.id)}">${expanded ? "詳細を閉じる" : "詳細を開く"}</button>
-      <div class="item-details" id="details-${esc(item.id)}" ${expanded ? "" : "hidden"}>${details(item)}${item.structure === "Series" ? children : ""}${detours}</div>
+      <div class="item-details" id="details-${esc(item.id)}" ${expanded ? "" : "hidden"}>${details(item)}${item.type === "Transit" ? '<p class="route-note">地図の破線は概略線です。</p>' : ""}${detours}</div>
       <button type="button" class="select-toggle" role="checkbox" aria-checked="${selection}" data-select="${esc(item.id)}">${selection === "true" ? "✓ 選択済み" : selection === "mixed" ? "− 一部選択" : "選択する"}<span class="sr-only"> ${esc(item.title)}</span></button>
-      ${["Alternative Group", "Flexible Block"].includes(item.structure) ? children : ""}
+      ${candidate ? comparisonHtml(item) : ""}
+      ${children}
     </article>`;
 }
 function comparisonHtml(item) {
@@ -236,8 +372,8 @@ function comparisonHtml(item) {
 }
 function candidateHtml(group) {
   const index = Math.max(0, group.children.findIndex((child) => child.id === state.activeCandidateByGroup.get(group.id)));
-  return `<div class="candidate-controls" data-group="${esc(group.id)}"><button type="button" data-candidate-step="-1" aria-label="${esc(group.title)}の前の候補" ${index === 0 ? "hidden" : ""}>←</button><span class="candidate-position">${index + 1} / ${group.children.length}</span><button type="button" data-candidate-step="1" aria-label="${esc(group.title)}の次の候補" ${index === group.children.length - 1 ? "hidden" : ""}>→</button></div>
-    <div class="group-candidates" data-group="${esc(group.id)}" tabindex="0" aria-label="${esc(group.title)}の候補。左右矢印キーで切り替え">${group.children.map((child, i) => `<div class="candidate-slot" data-candidate="${esc(child.id)}"><button type="button" class="activate-candidate" data-activate="${esc(child.id)}" data-group="${esc(group.id)}" aria-pressed="${i === index}">候補 ${i + 1} を表示</button>${cardHtml(child, i, group.children, true)}</div>`).join("")}</div>`;
+  return `<div class="candidate-controls" data-group="${esc(group.id)}" ${group.children.length < 2 ? "hidden" : ""}><span class="candidate-position" aria-live="polite">候補 ${index + 1} / ${group.children.length}</span><div><button type="button" data-candidate-step="-1" aria-label="${esc(group.title)}の前の候補" ${index === 0 ? "disabled" : ""}>‹</button><button type="button" data-candidate-step="1" aria-label="${esc(group.title)}の次の候補" ${index === group.children.length - 1 ? "disabled" : ""}>›</button></div></div>
+    <div class="group-candidates" data-group="${esc(group.id)}" tabindex="0" role="region" aria-label="${esc(group.title)}の候補。左右矢印、Home、Endで切り替え">${group.children.map((child, i) => `<div class="candidate-slot" data-candidate="${esc(child.id)}">${cardHtml(child, i, group.children, true)}</div>`).join("")}</div>`;
 }
 function renderItems({ fit = true } = {}) {
   visibleRoots = filterTree(tree.roots, state.filters, state.selectedIds, state.selectedDay, data.trip.timezone);
@@ -248,14 +384,21 @@ function renderItems({ fit = true } = {}) {
   for (const group of visibleItems.filter((item) => item.structure === "Alternative Group")) {
     if (!group.children.some((child) => child.id === state.activeCandidateByGroup.get(group.id))) state.activeCandidateByGroup.set(group.id, group.children[0]?.id);
   }
+  let invalidScene = false;
+  if (state.scene && !visibleItems.some(item => item.id === state.scene.id)) {
+    state.scene = null; invalidScene = true; suppressScrollFocus = true; clearTimeout(scrollTimer);
+    app.querySelector(".focus-status").textContent = "全画面の対象が削除されたか表示対象から外れたため、一日の旅程に戻りました。";
+  }
+  browsingRoots = state.scene ? visibleItems.filter(item => item.id === state.scene.rootId) : visibleRoots;
   state.mapTimeRange ||= initialTimeRange(visibleItems, state.selectedDay, data.trip.timezone);
-  itemsElement.innerHTML = visibleRoots.length ? visibleRoots.map((item, i) => cardHtml(item, i, visibleRoots)).join("") : `<div class="empty"><p>この日の公開予定はありません。</p><p>上の日付ボタンまたはフィルターを確認できます。</p>${days.filter((day) => day !== state.selectedDay).map((day) => `<button type="button" data-other-day="${esc(day)}">${esc(formatDay(day))}へ</button>`).join("")}</div>`;
+  itemsElement.innerHTML = browsingRoots.length ? browsingRoots.map((item, i) => cardHtml(item, i, browsingRoots)).join("") : `<div class="empty"><p>この日の公開予定はありません。</p><p>上の日付ボタンまたはフィルターを確認できます。</p>${days.filter((day) => day !== state.selectedDay).map((day) => `<button type="button" data-other-day="${esc(day)}">${esc(formatDay(day))}へ</button>`).join("")}</div>`;
+  itemsElement.querySelectorAll("[data-scene]").forEach(button => button.addEventListener("click", event => { if (!button.closest(".group-candidates")?.dataset.dragged || event.detail === 0) openScene(button.dataset.scene); }));
   itemsElement.querySelectorAll("[data-focus]").forEach((button) => button.addEventListener("click", () => focusItem(button.dataset.focus, "card")));
   itemsElement.querySelectorAll(".item").forEach((card) => card.addEventListener("click", (event) => { if (!event.target.closest("button, a") && event.target.closest(".item") === card) focusItem(card.dataset.id, "card"); }));
   itemsElement.querySelectorAll(".details-toggle").forEach((button) => button.addEventListener("click", () => {
     const id = button.closest(".item").dataset.id, expanded = !state.expandedItemIds.has(id);
     expanded ? state.expandedItemIds.add(id) : state.expandedItemIds.delete(id); setExpanded(button, expanded);
-    renderMap(false); paintFocus();
+    renderMap(false); paintFocus(); scheduleRail();
   }));
   itemsElement.querySelectorAll("[data-other-day]").forEach((button) => button.addEventListener("click", () => selectDay(button.dataset.otherDay)));
   itemsElement.querySelectorAll("[data-select]").forEach((button) => button.addEventListener("click", () => {
@@ -282,7 +425,9 @@ function renderItems({ fit = true } = {}) {
     try { await navigator.clipboard.writeText(text); button.nextElementSibling.textContent = "コピーしました。"; }
     catch { button.nextElementSibling.textContent = "コピーできませんでした。上の地点名・住所を選択してコピーしてください。"; }
   }));
-  setupCandidates(); updateComparisonStatus(); renderTimeControls(); renderMap(fit); paintFocus();
+  setupCandidates(); updateComparisonStatus(); renderTimeControls(); renderMap(fit); paintFocus(); paintModes();
+  railObserver?.disconnect(); railObserver?.observe(itemsElement); itemsElement.querySelectorAll(".card-heading").forEach(element => railObserver?.observe(element));
+  scheduleRail(); if (invalidScene) { restoreParent(); app.querySelector(".nav-itinerary").focus({ preventScroll: true }); }
 }
 
 function setExpanded(button, expanded) {
@@ -295,7 +440,7 @@ function cardIsDisplayed(card) {
   const carousel = card.closest(".group-candidates");
   if (!carousel) return true;
   const rect = card.getBoundingClientRect(), windowRect = carousel.getBoundingClientRect();
-  return rect.left < windowRect.right && rect.right > windowRect.left;
+  return !card.closest("[inert]") && rect.left < windowRect.right - 2 && rect.right > windowRect.left + 2;
 }
 function setupComparisonControls() {
   app.querySelector(".clear-selection").addEventListener("click", () => { state.selectedIds.clear(); renderItems({ fit: false }); });
@@ -329,6 +474,9 @@ function updateComparisonStatus() {
   app.querySelector(".comparison-status").textContent = `${filtersActive(state.filters) ? "フィルター中 · " : ""}該当 ${visibleItems.filter((item) => structureOf(item) === "Item").length}件 · 選択 ${state.selectedIds.size}件（非表示 ${hidden}件）`;
   const reservations = state.filters.reservationStatus;
   app.querySelector(".reservation-shortcut").setAttribute("aria-pressed", String(reservations.length === 2 && reservations.includes("Required") && reservations.includes("Pending")));
+  app.querySelector(".comparison-status").hidden = !state.comparisonMode && !state.selectedIds.size && !filtersActive(state.filters);
+  paintModes();
+  paintNoticeBadge();
 }
 function renderTimeControls() {
   const range = state.mapTimeRange;
@@ -342,10 +490,16 @@ function renderTimeControls() {
 }
 function setupCandidates() {
   itemsElement.querySelectorAll("[data-candidate-step]").forEach((button) => button.addEventListener("click", () => stepCandidate(button.closest("[data-group]").dataset.group, Number(button.dataset.candidateStep))));
-  itemsElement.querySelectorAll("[data-activate]").forEach((button) => button.addEventListener("click", () => activateCandidate(button.dataset.group, button.dataset.activate)));
   itemsElement.querySelectorAll(".group-candidates").forEach((carousel) => {
     const active = carousel.querySelector(`[data-candidate="${CSS.escape(state.activeCandidateByGroup.get(carousel.dataset.group))}"]`);
     if (active) carousel.scrollLeft = active.offsetLeft - carousel.firstElementChild.offsetLeft;
+    let gesture;
+    carousel.addEventListener("pointerdown", event => { gesture = { x: event.clientX, y: event.clientY }; delete carousel.dataset.dragged; clearTimeout(scrollTimer); });
+    carousel.addEventListener("pointermove", event => { if (gesture && Math.hypot(event.clientX - gesture.x, event.clientY - gesture.y) > 8) carousel.dataset.dragged = "true"; }, { passive: true });
+    carousel.addEventListener("pointerup", () => { gesture = null; });
+    carousel.addEventListener("pointercancel", () => { carousel.dataset.dragged = "true"; gesture = null; });
+    carousel.addEventListener("focusin", event => { if (!mobile()) { const slot = event.target.closest(".candidate-slot"); if (slot) activateCandidate(carousel.dataset.group, slot.dataset.candidate, false); } });
+    carousel.addEventListener("click", event => { if (!mobile()) { const slot = event.target.closest(".candidate-slot"); if (slot) activateCandidate(carousel.dataset.group, slot.dataset.candidate, false); } });
     carousel.addEventListener("keydown", (event) => {
       if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || event.target !== carousel) return;
       event.preventDefault(); stepCandidate(carousel.dataset.group, event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : event.key === "Home" ? -Infinity : Infinity);
@@ -354,12 +508,20 @@ function setupCandidates() {
     carousel.addEventListener("scroll", () => {
       clearTimeout(timer); timer = setTimeout(() => {
         if (!carousel.isConnected) return;
-        if (!mobile()) { updateCandidateControls(carousel.dataset.group); return; }
+        if (!mobile()) { updateCandidateControls(carousel.dataset.group); setupCandidateVisibility(); scheduleRail(); return; }
         const slots = [...carousel.children]; const left = carousel.getBoundingClientRect().left;
         const nearest = slots.reduce((best, slot) => Math.abs(slot.getBoundingClientRect().left - left) < Math.abs(best.getBoundingClientRect().left - left) ? slot : best, slots[0]);
         if (nearest) activateCandidate(carousel.dataset.group, nearest.dataset.candidate, false);
       }, 120);
+      scheduleRail();
     }, { passive: true });
+  });
+  setupCandidateVisibility();
+}
+function setupCandidateVisibility() {
+  itemsElement.querySelectorAll(".group-candidates").forEach(carousel => {
+    const active = state.activeCandidateByGroup.get(carousel.dataset.group), rect = carousel.getBoundingClientRect();
+    [...carousel.children].forEach(slot => { const box = slot.getBoundingClientRect(); slot.dataset.active = String(slot.dataset.candidate === active); slot.inert = mobile() ? slot.dataset.candidate !== active : box.left < rect.left - 2 || box.right > rect.right + 2; });
   });
 }
 function stepCandidate(groupId, direction) {
@@ -373,17 +535,21 @@ function activateCandidate(groupId, id, scroll = true) {
   if (!group?.children.some(child => child.id === id)) return;
   const changed = state.activeCandidateByGroup.get(groupId) !== id;
   state.activeCandidateByGroup.set(groupId, id);
+  if (state.scene?.rootId === groupId) state.scene.id = id;
   const carousel = itemsElement.querySelector(`.group-candidates[data-group="${CSS.escape(groupId)}"]`);
   if (carousel) {
     const slot = carousel.querySelector(`[data-candidate="${CSS.escape(id)}"]`);
     if (scroll && slot) carousel.scrollTo({ left: slot.offsetLeft - carousel.firstElementChild.offsetLeft, behavior: reducedMotion() ? "instant" : "smooth" });
-    carousel.querySelectorAll("[data-activate]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.activate === id)));
     updateCandidateControls(groupId);
   }
   if (changed) {
+    const oldBranch = group.children.find(child => child.id !== id && flattenTree([child]).some(node => node.id === state.focusedItemId));
+    if (oldBranch && mobile()) { state.focusedItemId = id; state.focusSource = "candidate"; }
+    suppressScrollFocus = true; clearTimeout(scrollTimer);
     app.querySelector(".focus-status").textContent = `${group.title}：${group.children.find((node) => node.id === id).title}を表示しています。`;
     renderMap(false); paintFocus();
   }
+  setupCandidateVisibility(); scheduleRail();
 }
 function updateCandidateControls(groupId) {
   const group = visibleItems.find((node) => node.id === groupId);
@@ -391,8 +557,8 @@ function updateCandidateControls(groupId) {
   const index = group.children.findIndex((node) => node.id === state.activeCandidateByGroup.get(groupId));
   const controls = itemsElement.querySelector(`.candidate-controls[data-group="${CSS.escape(groupId)}"]`);
   if (!controls) return;
-  controls.querySelector(".candidate-position").textContent = `${index + 1} / ${group.children.length}`;
-  controls.querySelector('[data-candidate-step="-1"]').hidden = index === 0; controls.querySelector('[data-candidate-step="1"]').hidden = index === group.children.length - 1;
+  controls.querySelector(".candidate-position").textContent = `候補 ${index + 1} / ${group.children.length}`;
+  controls.querySelector('[data-candidate-step="-1"]').disabled = index === 0; controls.querySelector('[data-candidate-step="1"]').disabled = index === group.children.length - 1;
   const carousel = itemsElement.querySelector(`.group-candidates[data-group="${CSS.escape(groupId)}"]`);
   carousel.dataset.before = String(carousel.scrollLeft > 2); carousel.dataset.after = String(carousel.scrollLeft + carousel.clientWidth < carousel.scrollWidth - 2);
 }
@@ -409,7 +575,8 @@ function paintFocus() {
     const detour = tree.byId.get(element.dataset.detourAssessment);
     element.textContent = detourAssessment(detour, tree.byId.get(detour.detourForId), tree, state.activeCandidateByGroup).text;
   });
-  const focused = focusedMapIds(state.focusedItemId, visibleRoots, state.activeCandidateByGroup);
+  const focused = focusedMapIds(state.focusedItemId, browsingRoots, state.activeCandidateByGroup);
+  itemsElement.querySelectorAll("[data-rail-id]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.railId === state.focusedItemId)));
   const selected = (id) => { const node = tree.byId.get(id); return node && selectionState(node, state.selectedIds) !== "false"; };
   itemsElement.querySelectorAll(".item").forEach((card) => {
     const active = card.dataset.id === state.focusedItemId;
@@ -461,7 +628,7 @@ function focusItem(id, source) {
   }
   const changed = state.focusedItemId !== id;
   state.focusedItemId = id; state.focusSource = source;
-  const desired = mapNodes(visibleRoots, state.activeCandidateByGroup, state.mapTimeRange, state.selectedDay, data.trip.timezone, places, state);
+  const desired = mapNodes(browsingRoots, state.activeCandidateByGroup, state.mapTimeRange, state.selectedDay, data.trip.timezone, places, state);
   if (desired.map(n => n.id).join() !== geographicItems.map(n => n.id).join()) renderMap(false);
   paintFocus();
   const card = [...itemsElement.querySelectorAll(".item")].find((element) => element.dataset.id === id);
@@ -473,7 +640,7 @@ function focusItem(id, source) {
     scrollTimer = setTimeout(() => { programmaticScroll = false; }, 1000);
   }
   if (!map || !changed || source === "map") return;
-  const focusIds = focusedMapIds(id, visibleRoots, state.activeCandidateByGroup);
+  const focusIds = focusedMapIds(id, browsingRoots, state.activeCandidateByGroup);
   const item = geographicItems.find((value) => focusIds.has(value.id)), coordinate = item && itemPlaces(item, places).filter(hasCoordinates)[0];
   if (coordinate && !map.getBounds().pad(-.15).contains([coordinate.latitude, coordinate.longitude])) map.panTo([coordinate.latitude, coordinate.longitude], { animate: !reducedMotion() });
   const layer = itemLayers.get(item?.id)?.find((value) => value.getLatLng);
@@ -492,7 +659,7 @@ function popupFor(place, items) {
 }
 
 function renderMap(fit = true) {
-  geographicItems = mapNodes(visibleRoots, state.activeCandidateByGroup, state.mapTimeRange, state.selectedDay, data.trip.timezone, places, state);
+  geographicItems = mapNodes(browsingRoots, state.activeCandidateByGroup, state.mapTimeRange, state.selectedDay, data.trip.timezone, places, state);
   app.querySelector(".time-status").textContent = `地図対象 ${geographicItems.length}件 · タイムラインと選択は変更されません。`;
   if (!map) return;
   map.closePopup(); layerGroup.clearLayers(); itemLayers = new Map(); markers = []; bounds = [];
@@ -556,14 +723,14 @@ async function loadMap() {
     tiles.on("tileerror", () => { tileErrors++; mapStatus("背景地図を読み込めません。地点・概略線と旅程、外部地図リンクを利用できます。"); });
     tiles.on("loading", () => { tileErrors = 0; }); tiles.on("load", () => { if (!tileErrors && bounds.length) mapStatus(""); });
     layerGroup = L.layerGroup().addTo(map); locationLayer = L.layerGroup().addTo(map); renderMap(); paintFocus(); paintLocation();
-    map.on("zoomend moveend", () => paintTransportLabels(focusedMapIds(state.focusedItemId, visibleRoots, state.activeCandidateByGroup)));
+    map.on("zoomend moveend", () => paintTransportLabels(focusedMapIds(state.focusedItemId, browsingRoots, state.activeCandidateByGroup)));
     matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", () => {
       map.options.zoomAnimation = !reducedMotion(); map.options.fadeAnimation = !reducedMotion(); map.options.markerZoomAnimation = !reducedMotion();
     });
   } catch { mapStatus("地図ライブラリを読み込めませんでした。旅程一覧と詳細の外部地図リンクは利用できます。"); }
 }
 
-function syncStatus(message, warning = false) { statusElement.textContent = message; statusElement.classList.toggle("warning", warning); }
+function syncStatus(message, warning = false) { statusElement.textContent = message; statusElement.classList.toggle("warning", warning); statusElement.classList.toggle("progress", refreshing); paintNoticeBadge(); }
 function applySyncHeader(response, updating) {
   const cache = response.headers.get("X-Itinerary-Cache");
   if (cache === "stale") syncStatus("Notionの更新に失敗しました。最後に取得した旅程を表示しています。最新でない可能性があります。", true);
@@ -610,6 +777,8 @@ function showData(next) {
   paintOffline();
 }
 function showLoadError(message = "通信状況を確認して、もう一度お試しください。保存済みの旅程がないため圏外では復元できません。") {
+  shellAbort?.abort(); shellLayoutObserver?.disconnect(); railObserver?.disconnect(); cancelAnimationFrame(railFrame);
+  state.scene = null; parentAnchor = null;
   map?.remove(); map = null; initialized = false; data = null;
   app.className = ""; app.setAttribute("aria-busy", "false");
   app.innerHTML = `<section class="error" role="alert"><h1>旅程を読み込めませんでした。</h1><p>${esc(message)}</p><button type="button" class="retry">再試行</button><button type="button" class="delete-error">保存を解除して削除</button><p class="storage-message" role="status"></p></section>`;
@@ -677,6 +846,9 @@ function paintOffline() {
   app.querySelector(".delete-offline").disabled = storageBusy;
   app.querySelector(".update-app").hidden = !waitingRegistration?.waiting;
   app.querySelector(".install-app").hidden = !deferredInstall;
+  const notices = [networkState === "圏外・通信失敗" ? "圏外・通信失敗。取得済みの旅程を表示中です。" : "", savedRecord && !savedRecord.payload ? "端末保存の期限切れ。新しい同期版を取得してください。" : "", waitingRegistration?.waiting ? "アプリ更新待機中。「その他」から明示的に切り替えられます。" : "", /Quota|denied|Error|できません|失敗|容量|確認でき|更新して|保存でき|再試行|禁止/i.test(storageMessage) ? storageMessage : ""].filter(Boolean);
+  const notice = app.querySelector(".state-notice"); notice.textContent = notices.join(" "); notice.hidden = !notices.length;
+  paintNoticeBadge();
 }
 async function checkExpiration() {
   if (!savedRecord || storageBusy) return;

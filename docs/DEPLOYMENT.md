@@ -7,7 +7,7 @@
 既存のWorker、Notion Connection、4DB、Webhookが動いている場合は、そのまま利用する。DB再作成、追加のDurable Object migration、Webhook再作成は不要。新しい任意列を利用しなければNotionの構造変更も不要。
 
 1. 下記の検証・デプロイコマンドをリポジトリ直下で実行する。
-2. 公開サイトを再読み込みし、カードに「詳細を開く」、モバイル地図に「最小・標準・拡大」が表示されることを確認する。
+2. 公開サイトを再読み込みし、カードの「詳細を開く」、下部の「旅程・地図・比較・その他」、モバイルの「地図」内にサイズ操作が表示されることを確認する。
 3. データの公開範囲を確認後、サイトの「Notionから再取得」を操作する。これは最新のNotionデータを読み取り、Workerキャッシュを更新する。新しい任意列もこの再取得から反映される。
 4. 更新から60秒以内はキャッシュになる。最終同期日時とサイトの警告を確認する。単なるページ再読み込みは、既存キャッシュがあればNotionを再取得しない。
 
@@ -181,3 +181,16 @@ Notion schema・Worker・DO・Secrets・公開slugは変更しません。Leafle
 緊急復旧は `node scripts/recovery-build.mjs phase4-baseline-20261012` で生成した `artifacts/phase4-recovery-wrangler.jsonc` を使い、同じ既存Workerへdry-run/deployします。復旧SWはnetwork-onlyへ切り替え、本アプリcache/DBを消去して登録解除し、開いている同一originの画面を旧UIへ再読み込みします。通常更新とは異なる緊急時の処理です。旧UIとcache/SW退役を確認します。閉じた端末には次回接続時の更新が必要です。Cloudflare旧versionへの切替だけでは既存SWを消せないため、復旧完了としません。元checkoutのresetや既存Notionデータの変更は不要です。
 
 保存期限は30×24時間。同じ `generatedAt` は通常GETが成功しても更新版ではありません。stale/throttled/5xx/timeoutで期限を延長しません。期限切れpayloadは起動/画面復帰/起動中に削除されますが、閉じたアプリで時刻指定の物理削除は保証しません。保存解除はアプリの「保存を解除して削除」を使用してください。
+
+## Phase 5 のローカル確認と操作
+
+Phase 5ではフロントエンドの表示と操作導線だけを更新しています。公開payload、Notion schema、Worker/DO、60秒制限、保存期限、現在地の扱いは従来どおりです。今回の実装作業では本番デプロイ・push・PR・Notion変更を行いません。
+
+1. `npm test`、`npm run test:browser`、`npm run test:pwa`、`npm run build`を実行します。ブラウザは既存Chrome、データは合成fixtureです。外部経路と背景タイルは検証時に捕捉します。
+2. `npm run preview:phase5` → `http://127.0.0.1:4175`。スマートフォンの初期地図は最小です。候補の前後/スワイプ/左右/Home/End、案名の全画面、戻る/Escape、比較、その他を確認します。PCは旅程左・地図右、候補2〜3列です。
+3. 「その他」から保存・削除・ホーム画面・再取得へ進みます。通常更新は「アプリ更新待機中」の通知を確認し、「その他 → 端末保存とホーム画面 → 更新があります・切り替える」を明示操作します。他のタブがある場合は閉じて再試行してください。
+4. PWAテストは `5115adbe3d4d06b333a9f9e1bd1f4b01cfce8ee4` の旧UIを `artifacts/phase5-baseline-dist` に再ビルドします。元checkoutを変更せず、旧UIで保存した永続profile→更新待機→明示切替→profile終了→圏外再起動を検証します。`git`とそのcommitを含む履歴が必要です。
+
+「その他」へ移した同期・保存の通知は、圏外/stale/失敗/期限切れ/更新待機の際にはメニュー外にも表示します。予約/施設/Google Maps/コピー/寄り道は項目詳細、現在地取得/更新・全体表示は地図内です。保存解除・復旧SWの手順と公開取り下げの制限はPhase 4の規則を維持します。新しいUI状態を保存しません。
+
+Volta shimが失敗する場合は上記のNode 24実体とnpm-cli.jsで各scriptを実行できます。localhost通信がsandboxで遮断される場合はブラウザ検証のローカル通信に必要な実行権限を使用します。OS設定変更は不要です。検証環境・画像・AC対応・実機未確認の範囲は [PHASE5_REPORT.md](PHASE5_REPORT.md) を参照してください。

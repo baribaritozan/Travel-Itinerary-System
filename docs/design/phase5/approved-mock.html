@@ -1,0 +1,262 @@
+<style>
+#trip-swipe-preview { width:100%; padding:24px 0; }
+#trip-swipe-preview .phone { --paper:light-dark(#f3f5f2,#181e1a); --surface:light-dark(#fff,#242d27); --ink:light-dark(#20362a,#e6eee8); --muted:light-dark(#5d6f61,#acbeb0); --green:light-dark(#26513e,#b5d9be); --on-green:light-dark(#fff,#1a3825); --soft:light-dark(#e9f0e8,#334237); --line:light-dark(#e7ece5,#3b4c3f); --warning:light-dark(#995227,#efb780); --radius:5px; width:390px; max-width:100%; min-height:920px; margin:auto; display:flex; flex-direction:column; color:var(--ink); background:var(--paper); border-radius:30px; overflow:hidden; font:15px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI','Yu Gothic UI',sans-serif; box-shadow:0 14px 45px light-dark(#17352412,#00000035); }
+#trip-swipe-preview .phone * { box-sizing:border-box; }
+#trip-swipe-preview .phone [hidden] { display:none!important; }
+#trip-swipe-preview .phone button { border:0; background:transparent; color:inherit; font:inherit; min-height:44px; min-width:44px; padding:8px 12px; border-radius:12px; touch-action:manipulation; }
+#trip-swipe-preview .phone h2, #trip-swipe-preview .phone h3, #trip-swipe-preview .phone p { margin:0; }
+#trip-swipe-preview .phone h2 { font-size:25px; line-height:1.4; font-weight:650; letter-spacing:-.035em; }
+#trip-swipe-preview .phone h3 { font-size:19px; line-height:1.45; font-weight:650; }
+#trip-swipe-preview .phone .muted { font-size:12px; color:var(--muted); }
+#trip-swipe-preview .phone .top { padding:27px 22px 15px; }
+#trip-swipe-preview .phone .kicker { font-size:11px; letter-spacing:.12em; color:var(--muted); margin-bottom:7px; }
+#trip-swipe-preview .phone .days { display:flex; align-items:center; gap:7px; margin-top:17px; }
+#trip-swipe-preview .phone .days span { font-size:13px; padding:9px 15px; color:var(--muted); border-radius:13px; }
+#trip-swipe-preview .phone .days .current { color:var(--on-green); background:var(--green); }
+#trip-swipe-preview .phone .day-label { padding:0 23px 12px; }
+#trip-swipe-preview .phone .content { flex:1; min-width:0; position:relative; padding-left:76px; }
+#trip-swipe-preview .phone .group { border-radius:var(--radius); background:var(--surface); margin:0 12px 12px 0; overflow:hidden; }
+#trip-swipe-preview .phone .group-head { padding:19px 20px 3px; }
+#trip-swipe-preview .phone .eyebrow { color:var(--muted); font-size:12px; margin-bottom:3px; }
+#trip-swipe-preview .phone .candidate-nav { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:2px 12px 0 20px; }
+#trip-swipe-preview .phone .candidate-nav .buttons { display:flex; align-items:center; gap:1px; }
+#trip-swipe-preview .phone .candidate-nav button { display:grid; place-items:center; }
+#trip-swipe-preview .phone button:disabled { color:var(--muted); opacity:.4; }
+#trip-swipe-preview .phone .track { display:flex; width:100%; overflow-x:auto; scroll-snap-type:x mandatory; scrollbar-width:none; overscroll-behavior-x:contain; }
+#trip-swipe-preview .phone .track::-webkit-scrollbar { display:none; }
+#trip-swipe-preview .phone .slide { flex:0 0 100%; min-width:0; scroll-snap-align:start; scroll-snap-stop:always; }
+#trip-swipe-preview .phone .plan-heading { margin:0; }
+#trip-swipe-preview .phone .expand { width:100%; display:flex; justify-content:space-between; align-items:center; gap:12px; text-align:left; padding:8px 20px 18px; border-radius:0; }
+#trip-swipe-preview .phone .expand strong { display:block; font-size:20px; font-weight:650; margin-top:3px; overflow-wrap:anywhere; }
+#trip-swipe-preview .phone .expand .expand-icon { color:var(--green); flex-shrink:0; }
+#trip-swipe-preview .phone .row { display:block; padding:15px 20px; border-top:1px solid var(--line); }
+#trip-swipe-preview .phone .clock, #trip-swipe-preview .phone .group-head .eyebrow { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+#trip-swipe-preview .phone .row-title { display:block; font-size:16px; font-weight:650; overflow-wrap:anywhere; }
+#trip-swipe-preview .phone .focus-row { background:var(--soft); }
+#trip-swipe-preview .phone .focus-label { color:var(--green); font-size:11px; margin-bottom:3px; }
+#trip-swipe-preview .phone summary { list-style:none; min-height:44px; display:flex; align-items:center; gap:8px; font-size:13px; color:var(--green); touch-action:manipulation; }
+#trip-swipe-preview .phone summary::-webkit-details-marker { display:none; }
+#trip-swipe-preview .phone .detail summary::after { content:'⌄'; }
+#trip-swipe-preview .phone .detail[open] summary::after { content:'⌃'; }
+#trip-swipe-preview .phone .detail p { color:var(--muted); font-size:13px; padding:0 0 8px; }
+#trip-swipe-preview .phone .free-head { background:var(--paper); border-top:1px solid var(--line); padding:14px 20px; }
+#trip-swipe-preview .phone .free-head strong { font-size:14px; font-weight:650; }
+#trip-swipe-preview .phone .spot { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 20px; }
+#trip-swipe-preview .phone .spot + .spot { border-top:1px solid var(--line); }
+#trip-swipe-preview .phone .spot .row-title { font-size:14px; }
+#trip-swipe-preview .phone .duration { white-space:nowrap; color:var(--muted); font-size:12px; }
+#trip-swipe-preview .phone .lunch { border-radius:var(--radius); background:var(--surface); margin:0 12px 16px 0; overflow:hidden; }
+#trip-swipe-preview .phone .warning { color:var(--warning); font-size:12px; margin-top:5px; }
+#trip-swipe-preview .phone .check { display:none; align-items:center; gap:8px; font-size:12px; color:var(--green); min-height:44px; }
+#trip-swipe-preview .phone .check input { width:20px; height:20px; flex-shrink:0; accent-color:var(--green); }
+#trip-swipe-preview .phone[data-compare=true] .check { display:flex; }
+#trip-swipe-preview .phone .parent-selection { padding:0 20px 10px; }
+#trip-swipe-preview .phone .parent-selection:has(.check:not([hidden])) { padding-bottom:0; }
+#trip-swipe-preview .phone .parent-selection .check { margin-bottom:8px; }
+#trip-swipe-preview .phone .scene-nav { display:flex; align-items:center; padding:14px 12px 3px; }
+#trip-swipe-preview .phone .scene-nav button { font-size:13px; color:var(--green); }
+#trip-swipe-preview .phone[data-expanded=true] .day-chrome, #trip-swipe-preview .phone[data-expanded=true] .lunch { display:none; }
+#trip-swipe-preview .phone:not([data-expanded=true]) .scene-nav { display:none; }
+#trip-swipe-preview .phone[data-expanded=true] .group { margin:0 12px 14px 0; border-radius:var(--radius); }
+#trip-swipe-preview .phone[data-expanded=true] .group-head { padding-top:12px; }
+#trip-swipe-preview .phone[data-expanded=true] .group-head h3 { font-size:14px; color:var(--muted); font-weight:400; }
+#trip-swipe-preview .phone[data-expanded=true] .expand { background:var(--green); color:var(--on-green); padding:20px; }
+#trip-swipe-preview .phone[data-expanded=true] .expand .muted, #trip-swipe-preview .phone[data-expanded=true] .expand-icon { color:var(--on-green); }
+#trip-swipe-preview .phone[data-expanded=true] .expand strong { font-size:26px; }
+#trip-swipe-preview .phone .map-preview { margin:0 12px 14px -64px; padding:18px; border-radius:var(--radius); background:var(--soft); }
+#trip-swipe-preview .phone .map-placeholder { min-height:155px; display:grid; place-content:center; text-align:center; color:var(--muted); }
+#trip-swipe-preview .phone .bar { margin-top:auto; position:relative; display:flex; align-items:stretch; background:var(--surface); border-top:1px solid var(--line); padding:9px 8px 14px; gap:2px; }
+#trip-swipe-preview .phone .bar > button, #trip-swipe-preview .phone .more { flex:1; min-width:0; }
+#trip-swipe-preview .phone .bar > button { padding:7px 2px; font-size:11px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; border-radius:13px; }
+#trip-swipe-preview .phone .bar > button[aria-pressed=true] { background:var(--soft); color:var(--green); }
+#trip-swipe-preview .phone .more > summary { flex-direction:column; justify-content:center; padding:7px 2px; font-size:11px; gap:4px; border-radius:13px; color:var(--ink); }
+#trip-swipe-preview .phone .more[open] > summary { background:var(--soft); color:var(--green); }
+#trip-swipe-preview .phone .menu { position:absolute; z-index:5; bottom:calc(100% + 8px); left:12px; right:12px; padding:16px 20px; background:var(--surface); border:1px solid var(--line); border-radius:20px; box-shadow:0 8px 30px light-dark(#17352420,#00000040); }
+#trip-swipe-preview .phone .menu > p { font-size:14px; font-weight:650; margin-bottom:8px; }
+#trip-swipe-preview .phone .menu details + details { border-top:1px solid var(--line); }
+#trip-swipe-preview .phone .menu details p { font-size:12px; color:var(--muted); padding-bottom:12px; }
+#trip-swipe-preview .phone .live { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+#trip-swipe-preview .phone .timeline-rail { position:absolute; inset:0 auto 0 0; width:76px; pointer-events:none; }
+#trip-swipe-preview .phone .rail-line { position:absolute; left:59px; width:1px; background:color-mix(in srgb,var(--green) 35%,var(--paper)); }
+#trip-swipe-preview .phone .rail-event { position:absolute; left:0; width:76px; height:44px; display:flex; align-items:center; }
+#trip-swipe-preview .phone .rail-time { position:absolute; right:29px; display:flex; flex-direction:column; align-items:flex-end; color:var(--muted); font-size:11px; line-height:1.5; font-variant-numeric:tabular-nums; }
+#trip-swipe-preview .phone .rail-time small { font-size:11px; }
+#trip-swipe-preview .phone .rail-dot { position:absolute; left:54px; width:11px; height:11px; border:1.5px solid var(--green); border-radius:50%; background:var(--paper); }
+#trip-swipe-preview .phone .rail-event[data-kind=group] .rail-dot { left:52px; width:15px; height:15px; }
+#trip-swipe-preview .phone .rail-event[data-focused=true] .rail-dot { background:var(--green); box-shadow:0 0 0 4px var(--soft); }
+#trip-swipe-preview .phone .rail-event[data-focused=true] .rail-time { color:var(--green); font-weight:650; }
+@media(max-width:420px) { #trip-swipe-preview { padding:16px 0; } #trip-swipe-preview .phone { border-radius:24px; } #trip-swipe-preview .phone .row { padding-left:16px; padding-right:16px; gap:8px; } #trip-swipe-preview .phone .spot { padding-left:16px; padding-right:16px; } }
+@media(prefers-reduced-motion:reduce) { #trip-swipe-preview .phone .track { scroll-behavior:auto!important; } }
+</style>
+<div id="trip-swipe-preview" class="viz-dotted-background">
+  <article class="phone" aria-label="横スワイプと全画面展開の旅程モック" data-expanded="false" data-compare="false">
+    <header class="top day-chrome"><p class="kicker">KYOTO / 3 DAYS</p><h2>秋の京都を歩く</h2><p class="muted">10月9日 — 11日</p><nav class="days" aria-label="サンプル旅程の日付"><span class="current" aria-current="date">9 金</span><span>10 土</span><span>11 日</span></nav></header>
+    <div class="scene-nav"><button type="button" class="back cursor-interaction">‹　一日の旅程に戻る</button></div>
+    <div class="day-label day-chrome"><p class="muted">10月9日の旅程</p></div>
+    <div class="content">
+      <section class="map-preview" aria-label="地図プレビュー" hidden><p>表示中の案の地図</p><div class="map-placeholder"><p>地図表示領域</p><p class="muted">配置確認用・地図データなし</p></div></section>
+      <section class="group" aria-label="午前の過ごし方">
+        <header class="group-head" data-rail-start="09:00" data-rail-end="12:00"><p class="eyebrow">09:00 — 12:00</p><h3>午前の過ごし方</h3></header>
+        <div class="candidate-nav"><span class="muted" data-position aria-live="polite">候補 1 / 2</span><div class="buttons"><button type="button" class="previous cursor-interaction" aria-label="前の案" disabled><i data-lucide="chevron-left" aria-hidden="true"></i><span class="fallback-arrow" aria-hidden="true">‹</span></button><button type="button" class="next cursor-interaction" aria-label="次の案"><i data-lucide="chevron-right" aria-hidden="true"></i><span class="fallback-arrow" aria-hidden="true">›</span></button></div></div>
+        <div class="track" role="region" aria-label="午前の候補。左右スワイプで切替">
+          <article class="slide" data-candidate="walk" aria-label="東山さんぽ">
+            <h3 class="plan-heading"><button type="button" class="expand cursor-interaction" aria-label="東山さんぽを全画面で表示" aria-expanded="false"><span><span class="muted">表示中の案</span><strong>東山さんぽ</strong></span><span class="expand-icon"><i data-lucide="expand" aria-hidden="true"></i><span class="fallback-arrow" aria-hidden="true">↗</span></span></button></h3>
+            <div class="parent-selection"><label class="check"><input type="checkbox" data-parent="walk">この案全体を比較対象にする</label></div>
+            <div class="row"><time class="clock">09:00</time><div><span class="row-title">京都駅 → 東山</span><p class="muted">バス · 30分</p><label class="check"><input type="checkbox" data-leaf="walk-transit">比較対象</label></div></div>
+            <div class="row focus-row"><time class="clock">09:30</time><div><p class="focus-label">地図で注目中</p><span class="row-title">清水寺を見学</span><p class="muted">観光 · 60分 · ¥500 / 人</p><details class="detail"><summary class="cursor-interaction">詳細</summary><p>歩きやすい靴で。<br>集合は入口付近。施設情報・住所をここに表示。</p></details><label class="check"><input type="checkbox" data-leaf="walk-temple">比較対象</label></div></div>
+            <header class="free-head" data-rail-start="10:30" data-rail-end="12:00"><strong>自由時間</strong><p class="muted">この時間内で立ち寄れる候補 · 時刻未定</p></header>
+            <div class="spot"><div><span class="row-title">二年坂を散策</span><p class="muted">散策 · 無料</p><label class="check"><input type="checkbox" data-leaf="walk-street">比較対象</label></div><span class="duration">目安 30分</span></div>
+            <div class="spot"><div><span class="row-title">カフェでひと休み</span><p class="muted">食事 · 営業 10:00–18:00</p><label class="check"><input type="checkbox" data-leaf="walk-cafe">比較対象</label></div><span class="duration">目安 45分</span></div>
+          </article>
+          <article class="slide" data-candidate="indoor" aria-label="屋内でゆっくり" inert>
+            <h3 class="plan-heading"><button type="button" class="expand cursor-interaction" aria-label="屋内でゆっくりを全画面で表示" aria-expanded="false"><span><span class="muted">表示中の案</span><strong>屋内でゆっくり</strong></span><span class="expand-icon"><i data-lucide="expand" aria-hidden="true"></i><span class="fallback-arrow" aria-hidden="true">↗</span></span></button></h3>
+            <div class="parent-selection"><label class="check"><input type="checkbox" data-parent="indoor">この案全体を比較対象にする</label></div>
+            <div class="row"><time class="clock">09:00</time><div><span class="row-title">京都駅 → 博物館</span><p class="muted">バス · 30分</p><label class="check"><input type="checkbox" data-leaf="indoor-transit">比較対象</label></div></div>
+            <div class="row focus-row"><time class="clock">09:30</time><div><p class="focus-label">地図で注目中</p><span class="row-title">博物館を見学</span><p class="muted">観光 · 60分 · ¥700 / 人</p><details class="detail"><summary class="cursor-interaction">詳細</summary><p>展示をゆっくり見て回る。<br>施設情報・住所をここに表示。</p></details><label class="check"><input type="checkbox" data-leaf="indoor-museum">比較対象</label></div></div>
+            <header class="free-head" data-rail-start="10:30" data-rail-end="12:00"><strong>自由時間</strong><p class="muted">この時間内で立ち寄れる候補 · 時刻未定</p></header>
+            <div class="spot"><div><span class="row-title">ミュージアムショップ</span><p class="muted">買い物 · 入場無料</p><label class="check"><input type="checkbox" data-leaf="indoor-shop">比較対象</label></div><span class="duration">目安 30分</span></div>
+            <div class="spot"><div><span class="row-title">館内カフェでひと休み</span><p class="muted">食事 · 営業 10:00–18:00</p><label class="check"><input type="checkbox" data-leaf="indoor-cafe">比較対象</label></div><span class="duration">目安 45分</span></div>
+          </article>
+        </div>
+      </section>
+      <section class="lunch"><div class="row"><time class="clock">12:30</time><div><span class="row-title">祇園でランチ</span><p class="muted">食事 · 60分</p><p class="warning">予約が必要 · 未完了</p></div></div></section>
+      <div class="timeline-rail" aria-hidden="true"><div class="rail-line"></div><div class="rail-events"></div></div>
+    </div>
+    <nav class="bar" aria-label="旅程メニュー">
+      <button type="button" class="journey cursor-interaction" aria-pressed="true"><i data-lucide="route" aria-hidden="true"></i><span>旅程</span></button>
+      <button type="button" class="map-toggle cursor-interaction" aria-pressed="false"><i data-lucide="map" aria-hidden="true"></i><span>地図</span></button>
+      <button type="button" class="compare cursor-interaction" aria-pressed="false"><i data-lucide="square-check" aria-hidden="true"></i><span data-compare-label>比較</span></button>
+      <details class="more"><summary class="cursor-interaction"><i data-lucide="ellipsis" aria-hidden="true"></i><span>その他</span></summary><div class="menu"><p>旅行メニュー</p><details><summary class="cursor-interaction">絞り込み・表示時間</summary><p>予定の種別・予約状態などで絞り込み<br>地図に表示する時間帯を調整</p></details><details><summary class="cursor-interaction">端末保存・ホーム画面</summary><p>保存状態：未保存<br>旅程の保存・削除、ホーム画面への追加</p></details><details><summary class="cursor-interaction">旅行情報・更新</summary><p>秋の京都を歩く · 10/9 — 11<br>最終同期：10/9 08:30<br>Notionからの再取得</p></details></div></details>
+    </nav>
+    <p class="live" role="status" aria-live="polite" data-status>東山さんぽを表示中</p>
+  </article>
+</div>
+<script>
+(() => {
+  const root = document.getElementById('trip-swipe-preview');
+  const phone = root.querySelector('.phone');
+  const track = root.querySelector('.track');
+  const slides = [...root.querySelectorAll('.slide')];
+  const previous = root.querySelector('.previous');
+  const next = root.querySelector('.next');
+  const back = root.querySelector('.back');
+  const compare = root.querySelector('.compare');
+  const mapButton = root.querySelector('.map-toggle');
+  const journey = root.querySelector('.journey');
+  const menu = root.querySelector('.more');
+  const status = root.querySelector('[data-status]');
+  const content = root.querySelector('.content');
+  const railEvents = root.querySelector('.rail-events');
+  const railLine = root.querySelector('.rail-line');
+  const remembered = window.openai?.widgetState;
+  const initial = remembered?.privateContent || {};
+  let active = initial.active === 1 ? 1 : 0;
+  let expanded = initial.expanded === true;
+  let comparing = initial.comparing === true;
+  let mapping = initial.mapping === true;
+  const selected = new Set(Array.isArray(initial.selected) ? initial.selected.filter(id => slides.some(slide => [...slide.querySelectorAll('[data-leaf]')].some(input => input.dataset.leaf === id))) : []);
+  function layoutTimeline() {
+    const base = content.getBoundingClientRect();
+    const anchors = [root.querySelector('.group-head'),...slides[active].querySelectorAll('.row, .free-head')];
+    if(!expanded) anchors.push(root.querySelector('.lunch .row'));
+    const events = anchors.map(anchor => {
+      const title = anchor.querySelector('.row-title, h3, strong');
+      const bounds = title.getBoundingClientRect();
+      return {y:bounds.top + bounds.height/2 - base.top, start:anchor.dataset.railStart || anchor.querySelector('.clock')?.textContent || '', end:anchor.dataset.railEnd || '', group:anchor.classList.contains('group-head'), focused:anchor.classList.contains('focus-row')};
+    });
+    railEvents.replaceChildren(...events.map(event => {
+      const node = document.createElement('div'); node.className='rail-event'; node.style.top=(event.y-22)+'px'; node.dataset.kind=event.group?'group':'item'; node.dataset.focused=String(event.focused);
+      const time = document.createElement('span'); time.className='rail-time'; time.textContent=event.start;
+      if(event.end) { const end=document.createElement('small'); end.textContent='– '+event.end; time.append(end); }
+      const dot = document.createElement('span'); dot.className='rail-dot'; node.append(time,dot); return node;
+    }));
+    railLine.style.top=events[0].y+'px'; railLine.style.height=(events[events.length-1].y-events[0].y)+'px';
+  }
+  let timelineFrame;
+  function scheduleTimeline() { cancelAnimationFrame(timelineFrame); timelineFrame=requestAnimationFrame(layoutTimeline); }
+  function save() {
+    if (!window.openai?.setWidgetState) return;
+    window.openai.setWidgetState({ modelContent:{candidate:slides[active].getAttribute('aria-label'),expanded,comparing},privateContent:{active,expanded,comparing,mapping,selected:[...selected],details:[...root.querySelectorAll('.detail')].map(detail=>detail.open)} }).catch(()=>{});
+  }
+  function paint() {
+    phone.dataset.expanded = String(expanded); phone.dataset.compare = String(comparing);
+    root.querySelector('[data-position]').textContent = `候補 ${active + 1} / ${slides.length}`;
+    previous.disabled = active === 0; next.disabled = active === slides.length - 1;
+    slides.forEach((slide,index) => {
+      slide.inert = index !== active;
+      const button = slide.querySelector('.expand');
+      button.setAttribute('aria-expanded',String(expanded));
+      button.setAttribute('aria-label',slide.getAttribute('aria-label') + (expanded ? 'の全画面表示を閉じる' : 'を全画面で表示'));
+      const icon = button.querySelector('.expand-icon');
+      if(icon.dataset.expanded !== String(expanded)) {
+        icon.dataset.expanded = String(expanded);
+        icon.innerHTML = expanded ? '<i data-lucide="minimize-2" aria-hidden="true"></i><span class="fallback-arrow" aria-hidden="true">↙</span>' : '<i data-lucide="expand" aria-hidden="true"></i><span class="fallback-arrow" aria-hidden="true">↗</span>';
+        if(globalThis.lucide) { icon.querySelector('.fallback-arrow').hidden=true; lucide.createIcons({attrs:{width:18,height:18}}); }
+      }
+      slide.querySelectorAll('[data-leaf]').forEach(input=>input.checked=selected.has(input.dataset.leaf));
+      const leaves = [...slide.querySelectorAll('[data-leaf]')];
+      const count = leaves.filter(input=>input.checked).length;
+      const parent = slide.querySelector('[data-parent]');
+      parent.checked = count === leaves.length; parent.indeterminate = count > 0 && count < leaves.length;
+    });
+    compare.setAttribute('aria-pressed',String(comparing));
+    root.querySelector('[data-compare-label]').textContent = selected.size ? `比較 ${selected.size}件` : comparing ? '比較を終了' : '比較';
+    mapButton.setAttribute('aria-pressed',String(mapping)); journey.setAttribute('aria-pressed',String(!mapping));
+    root.querySelector('.map-preview').hidden = !mapping;
+    scheduleTimeline();
+  }
+  function move(index,animate=true) {
+    active = Math.max(0,Math.min(slides.length - 1,index)); paint();
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    track.scrollTo({left:active*track.clientWidth,behavior:animate&&!reduce?'smooth':'instant'});
+    status.textContent=slides[active].getAttribute('aria-label')+'を表示中'; save();
+  }
+  let scrollTimer;
+  track.addEventListener('scroll',()=> {
+    clearTimeout(scrollTimer);
+    scrollTimer=setTimeout(()=> {
+      const index=Math.round(track.scrollLeft/track.clientWidth);
+      if(index!==active) { active=index; paint(); status.textContent=slides[active].getAttribute('aria-label')+'を表示中'; save(); }
+    },100);
+  },{passive:true});
+  previous.addEventListener('click',()=> { move(active-1); if(previous.disabled) next.focus(); });
+  next.addEventListener('click',()=> { move(active+1); if(next.disabled) previous.focus(); });
+  track.addEventListener('keydown',event=> {
+    if(event.target.matches('input')) return;
+    if(event.key==='ArrowRight'||event.key==='ArrowLeft') { event.preventDefault(); move(active+(event.key==='ArrowRight'?1:-1),false); slides[active].querySelector('.expand').focus({preventScroll:true}); }
+  });
+  const setExpanded = value => {
+    expanded=value; menu.open=false; paint();
+    if(value) back.focus({preventScroll:true}); else slides[active].querySelector('.expand').focus({preventScroll:true});
+    save();
+  };
+  root.querySelectorAll('.expand').forEach(button=>button.addEventListener('click',()=>setExpanded(!expanded)));
+  back.addEventListener('click',()=>setExpanded(false));
+  phone.addEventListener('keydown',event=> { if(event.key==='Escape') { if(menu.open) menu.open=false; else if(expanded) setExpanded(false); } });
+  compare.addEventListener('click',()=> { comparing=!comparing; menu.open=false; paint(); save(); });
+  mapButton.addEventListener('click',()=> { mapping=!mapping; menu.open=false; paint(); save(); });
+  journey.addEventListener('click',()=> { mapping=false; menu.open=false; if(expanded) setExpanded(false); else paint(); save(); });
+  root.querySelectorAll('[data-leaf]').forEach(input=>input.addEventListener('change',()=> { input.checked?selected.add(input.dataset.leaf):selected.delete(input.dataset.leaf); paint(); save(); }));
+  root.querySelectorAll('[data-parent]').forEach(input=>input.addEventListener('change',()=> {
+    const leaves=[...input.closest('.slide').querySelectorAll('[data-leaf]')];
+    const all=leaves.every(leaf=>selected.has(leaf.dataset.leaf));
+    leaves.forEach(leaf=>all?selected.delete(leaf.dataset.leaf):selected.add(leaf.dataset.leaf)); paint(); save();
+  }));
+  root.querySelectorAll('.detail').forEach((detail,index)=> { if(Array.isArray(initial.details)) detail.open=initial.details[index]===true; detail.querySelector('summary').addEventListener('click',()=>requestAnimationFrame(save)); detail.addEventListener('toggle',scheduleTimeline); });
+  window.addEventListener('openai:set_globals',event=> {
+    const value=event.detail?.globals?.widgetState?.privateContent;
+    if(!value) return;
+    active=value.active===1?1:0; expanded=value.expanded===true; comparing=value.comparing===true; mapping=value.mapping===true;
+    selected.clear(); if(Array.isArray(value.selected)) value.selected.forEach(id=>{if(root.querySelector(`[data-leaf="${CSS.escape(id)}"]`)) selected.add(id);});
+    root.querySelectorAll('.detail').forEach((detail,index)=>detail.open=value.details?.[index]===true);
+    paint(); track.scrollTo({left:active*track.clientWidth,behavior:'instant'});
+  });
+  const settings={radius:5};
+  if(globalThis.Tweak) { const tweak=new Tweak({container:phone,onChange:()=>phone.style.setProperty('--radius',settings.radius+'px')}); tweak.addSlider(settings,'radius',{label:'セクションの角丸',min:0,max:28,unit:'px'}); }
+  paint();
+  requestAnimationFrame(()=>track.scrollTo({left:active*track.clientWidth,behavior:'instant'}));
+  new ResizeObserver(()=>track.scrollTo({left:active*track.clientWidth,behavior:'instant'})).observe(track);
+  new ResizeObserver(scheduleTimeline).observe(content);
+  if(globalThis.lucide) { root.querySelectorAll('.fallback-arrow').forEach(element=>element.hidden=true); }
+})();
+</script>
