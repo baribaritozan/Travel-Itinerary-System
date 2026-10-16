@@ -1,6 +1,6 @@
 # Phase 5 実装計画：旅程に集中するUI刷新
 
-2026-10-16。状態：実装・必須ローカル検証・ブラウザ操作・画像確認・文書更新完了。正式要件は [SPECIFICATION.md v0.6 §24](../SPECIFICATION.md)。画面の基準は [承認モック](design/phase5/README.md)。結果とACごとの証拠は [PHASE5_REPORT.md](PHASE5_REPORT.md)、数値は [PHASE5_EVIDENCE.json](PHASE5_EVIDENCE.json)。実機確認・本番公開は今回の完了範囲外。
+2026-10-16。状態：実装・必須ローカル検証・ブラウザ操作・画像確認・文書更新完了。正式要件は [SPECIFICATION.md v0.6 §24](../SPECIFICATION.md)。画面の基準は [承認モック](design/phase5/README.md)。結果とACごとの証拠は [PHASE5_REPORT.md](PHASE5_REPORT.md)、数値は [PHASE5_EVIDENCE.json](PHASE5_EVIDENCE.json)。実機確認は未実施。本番公開はローカル確認後の追加指示で実施済み：[本番公開・GitHub同期報告](PHASE5_PUBLISH_REPORT.md)。
 
 ## 目的・範囲
 

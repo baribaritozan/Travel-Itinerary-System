@@ -2,12 +2,12 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 文書バージョン | 0.6（Phase 1〜4 完了、Phase 5 UI刷新の実装要件確定） |
+| 文書バージョン | 0.6（Phase 1〜5 実装・公開済み） |
 | 更新日 | 2026-10-16 |
 | 対象 | `notion-itinerary-publisher` |
 | 想定利用者 | 旅行の参加者・幹事 |
 | 主利用端末 | スマートフォン |
-| 実装状態 | Phase 1〜4 デプロイ・自動検証済み。Phase 5は仕様・計画のみで未実装。iPhone/Android実機確認は後続 |
+| 実装状態 | Phase 1〜5 デプロイ・自動検証・本番Chrome確認済み。iPhone/Android実機確認は後続 |
 
 ## 1. 目的
 
@@ -78,7 +78,7 @@
 | Should | 基本機能の安定後に追加 |
 | Could | 将来検討。実装時に再設計可 |
 
-Phase 1〜4は完了済みである。次の実装対象は、既存機能を保ったまま旅程確認に集中できる画面へ刷新するPhase 5とする。正式な要件・受入条件は§24、実装項目は [PHASE5_PLAN.md](docs/PHASE5_PLAN.md)、実行用プロンプトは [PHASE5_GOAL_PROMPT.md](docs/PHASE5_GOAL_PROMPT.md) を参照する。
+Phase 1〜5は実装・公開済みである。Phase 5の正式な要件・受入条件は§24、実装項目は [PHASE5_PLAN.md](docs/PHASE5_PLAN.md)、実行用プロンプトは [PHASE5_GOAL_PROMPT.md](docs/PHASE5_GOAL_PROMPT.md)、実施結果は [PHASE5_REPORT.md](docs/PHASE5_REPORT.md) と [本番公開報告](docs/PHASE5_PUBLISH_REPORT.md) を参照する。
 
 ## 5. 用語と状態
 
@@ -711,7 +711,7 @@ Phase 5の承認モックを基準とし、深緑・明るいニュートラル�
 - 交通手段表示と登録区間のGoogle Maps引き渡し
 - 背景地図の永続保存は後続
 
-### Phase 5：旅程に集中するUI刷新（仕様確定・未実装）
+### Phase 5：旅程に集中するUI刷新（実装・本番Chrome確認済み）
 
 - フラットな見出し・本文と共通タイムライン列
 - 案名と本文の横スワイプ、案名からの全画面表示

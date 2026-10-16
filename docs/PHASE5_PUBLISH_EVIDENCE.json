@@ -1,0 +1,83 @@
+{
+  "date": "2026-10-16",
+  "repository": "https://github.com/baribaritozan/Travel-Itinerary-System",
+  "branch": "codex/phase5-20261016",
+  "baseBranch": "codex/phase4-20261012",
+  "pullRequest": "https://github.com/baribaritozan/Travel-Itinerary-System/pull/4",
+  "merged": false,
+  "implementationCommit": "1ec11c890090ea239b48373e2bb7404ced673db1",
+  "baselineCommit": "5115adbe3d4d06b333a9f9e1bd1f4b01cfce8ee4",
+  "baselineTag": "phase5-baseline-20261016",
+  "production": {
+    "url": "https://travel-itinerary.baribaritozan.workers.dev",
+    "worker": "travel-itinerary",
+    "deploymentId": "27f967b2-8c42-48c2-973b-c7e8ef80e14b",
+    "versionId": "8cb51eb0-0744-4951-af39-39da537912d1",
+    "percentage": 100,
+    "deployedAt": "2026-10-16T07:46:17.391527Z",
+    "build": "7cb8e398d4aa3339",
+    "verifiedOfflineAssets": 16
+  },
+  "previousProduction": {
+    "deploymentId": "22da1af8-01ec-4cae-9a2a-b6101450de4a",
+    "versionId": "0a718c9e-ffdd-495f-ad7f-1bb29f881a3e"
+  },
+  "payload": {
+    "items": 19,
+    "places": 2,
+    "sha256Before": "1fec942d4a43b395a22f474ddc1b9c0b8f37646d42a2dd357f6e85d71ad7af7a",
+    "sha256After": "1fec942d4a43b395a22f474ddc1b9c0b8f37646d42a2dd357f6e85d71ad7af7a",
+    "unchanged": true
+  },
+  "validation": {
+    "localTests": 164,
+    "unit": 109,
+    "browser": 45,
+    "pwa": 10,
+    "sourceHashesUnchangedFromLocalValidation": true,
+    "publishUnitRerun": 109,
+    "syntaxFiles": 27,
+    "dryRun": "passed",
+    "productionSmoke": "passed",
+    "productionChecks": [
+      "16 deployed hashes and SW content/headers match local build",
+      "real production legacy profile waits, one explicit activation, unchanged saved trip/expiry, only new shell cache",
+      "real published candidates/scenes, menus, comparison retention and map",
+      "real published candidates/scenes, menus, comparison retention and map",
+      "profile terminated then offline restart with new UI controls, pins and routes",
+      "UI state not persisted, saved expiry retained",
+      "reconnected GET and real noopener route popup with Google network intercepted",
+      "test profile explicit DB/cache/SW deletion",
+      "zero geolocation and zero production POST",
+      "public payload unchanged"
+    ],
+    "geolocationRequests": 0,
+    "productionPOSTs": 0,
+    "physicalMobileDevices": false,
+    "freshProfile": {
+      "result": "passed",
+      "initial": {
+        "geo": 0,
+        "databases": [],
+        "caches": [],
+        "registrations": 0
+      },
+      "POSTs": 0,
+      "defaultMap": "minimal"
+    }
+  },
+  "changes": {
+    "Notion": false,
+    "secrets": false,
+    "WorkerDOConfiguration": false,
+    "forcePush": false,
+    "mainMerge": false
+  },
+  "images": [
+    "artifacts/phase5-production-mobile.png",
+    "artifacts/phase5-production-desktop.png",
+    "artifacts/phase5-production-fullscreen.png",
+    "artifacts/phase5-production-offline.png",
+    "artifacts/phase5-production-fresh-mobile.png"
+  ]
+}

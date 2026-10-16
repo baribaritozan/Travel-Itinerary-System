@@ -195,4 +195,6 @@ Phase 3の要件対応・baselineは [計画](./docs/PHASE3_PLAN.md)、実環境
 - 合意した画面と操作：[承認モック](docs/design/phase5/README.md)
 - 実装・受入条件ごとの証拠：[Phase 5報告](docs/PHASE5_REPORT.md)
 
-今回の範囲はローカル実装・自動検証・操作/画像確認・報告までです。本番公開は別途の指示に従います。iPhone/Android実機は未確認です。
+ローカル確認後のユーザー指示により、[本番サイト](https://travel-itinerary.baribaritozan.workers.dev)へPhase 5を公開しました。旧UIで保存済みの端末は「更新があります・切り替える」を明示操作してください。新版では「その他 → 端末保存とホーム画面」にあります。
+
+GitHubは `codex/phase5-20261016` と [PR #4](https://github.com/baribaritozan/Travel-Itinerary-System/pull/4)へ同期済み。Phase 4のPR #3が未mergeのため、そのbranchをbaseにしています。公開結果・復旧点・本番Chrome確認は [Phase 5公開報告](docs/PHASE5_PUBLISH_REPORT.md) を参照してください。iPhone/Android実機は未確認です。

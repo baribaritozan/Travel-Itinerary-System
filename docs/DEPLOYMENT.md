@@ -184,7 +184,7 @@ Notion schema・Worker・DO・Secrets・公開slugは変更しません。Leafle
 
 ## Phase 5 のローカル確認と操作
 
-Phase 5ではフロントエンドの表示と操作導線だけを更新しています。公開payload、Notion schema、Worker/DO、60秒制限、保存期限、現在地の扱いは従来どおりです。今回の実装作業では本番デプロイ・push・PR・Notion変更を行いません。
+Phase 5ではフロントエンドの表示と操作導線だけを更新しています。公開payload、Notion schema、Worker/DO、60秒制限、保存期限、現在地の扱いは従来どおりです。ローカル完了後のユーザー指示で本番公開・GitHub同期を実施しました。Notion変更は行っていません。配信version・復旧点・確認結果は [PHASE5_PUBLISH_REPORT.md](PHASE5_PUBLISH_REPORT.md) を参照してください。
 
 1. `npm test`、`npm run test:browser`、`npm run test:pwa`、`npm run build`を実行します。ブラウザは既存Chrome、データは合成fixtureです。外部経路と背景タイルは検証時に捕捉します。
 2. `npm run preview:phase5` → `http://127.0.0.1:4175`。スマートフォンの初期地図は最小です。候補の前後/スワイプ/左右/Home/End、案名の全画面、戻る/Escape、比較、その他を確認します。PCは旅程左・地図右、候補2〜3列です。
